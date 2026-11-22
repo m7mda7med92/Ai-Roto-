@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mait/v1/error.schema.json",
+  "title": "ErrorInfo",
+  "description": "Structured error object. Error responses are {\"ok\": false, \"error\": ErrorInfo}.",
+  "type": "object",
+  "required": ["code", "message"],
+  "properties": {
+    "code": {"type": "string"},
+    "message": {"type": "string"},
+    "details": {"type": "object"}
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "_comment": "Plugin defaults. User changes are stored separately in <user dir>/user_settings.json; this file is never modified at runtime.",
+  "ui": {
+    "default_module": "project_manager",
+    "default_workspace": "Default",
+    "right_panel_visible": true,
+    "bottom_panel_visible": true,
+    "window_width": 1500,
+    "window_height": 900
+  },
+  "engine": {
+    "python_executable": "",
+    "venv_dir": ".venv_engine",
+    "config_file": "config/engine_settings.json",
+    "port": 0,
+    "startup_timeout_seconds": 30,
+    "shutdown_timeout_seconds": 10,
+    "health_check_interval_seconds": 3.0,
+    "health_failures_before_offline": 2,
+    "request_timeout_seconds": 5.0,
+    "auto_connect_on_open": true,
+    "stop_owned_engine_on_exit": true
+  },
+  "jobs": {
+    "poll_interval_seconds": 0.5,
+    "test_job_duration_seconds": 20,
+    "test_job_steps": 100
+  },
+  "projects": {
+    "recent": [],
+    "max_recent": 10,
+    "default_root": ""
+  },
+  "logging": {
+    "level": "INFO"
+  }
+}

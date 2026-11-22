@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mait/v1/job_request.schema.json",
+  "title": "JobRequest",
+  "description": "Body of POST /api/v1/jobs. Mirrors shared.contracts.JobRequest.",
+  "type": "object",
+  "required": ["job_type"],
+  "properties": {
+    "job_type": {"type": "string", "pattern": "^[a-z][a-z0-9_.\\-]*$", "maxLength": 64},
+    "params": {"type": "object"},
+    "label": {"type": "string", "maxLength": 200},
+    "client": {"type": "object", "description": "Free-form client info, e.g. {\"name\": \"maya\", \"version\": \"2024\"}"}
+  },
+  "additionalProperties": false
+}

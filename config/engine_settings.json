@@ -1,0 +1,33 @@
+{
+  "_comment": "AI engine settings. The engine only ever binds to 127.0.0.1. port 0 = OS picks a free port (published in the session file).",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 0,
+    "max_request_bytes": 1048576,
+    "request_timeout_seconds": 30
+  },
+  "jobs": {
+    "max_concurrent_jobs": 2,
+    "max_queued_jobs": 100,
+    "history_limit": 200
+  },
+  "gpu": {
+    "detect_with_nvidia_smi": true,
+    "detect_with_torch": true,
+    "nvidia_smi_timeout_seconds": 5
+  },
+  "logging": {
+    "level": "INFO",
+    "json_file": true,
+    "max_bytes": 5242880,
+    "backup_count": 3
+  },
+  "watchdog": {
+    "parent_check_interval_seconds": 2.0
+  },
+  "simulated_job": {
+    "default_duration_seconds": 10.0,
+    "default_steps": 50,
+    "max_duration_seconds": 3600.0
+  }
+}

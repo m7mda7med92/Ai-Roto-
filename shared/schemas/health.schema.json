@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mait/v1/health.schema.json",
+  "title": "HealthInfo",
+  "description": "Payload of GET /api/v1/health. Mirrors shared.contracts.HealthInfo.",
+  "type": "object",
+  "required": ["status", "engine_version", "api_version", "python_version", "pid", "uptime_seconds",
+               "gpu_available", "cuda_available", "active_jobs"],
+  "properties": {
+    "status": {"enum": ["ok", "shutting_down"]},
+    "engine_version": {"type": "string"},
+    "api_version": {"type": "string"},
+    "python_version": {"type": "string"},
+    "platform": {"type": "string"},
+    "pid": {"type": "integer"},
+    "uptime_seconds": {"type": "number"},
+    "gpu_available": {"type": "boolean"},
+    "cuda_available": {"type": "boolean"},
+    "gpu_devices": {"type": "array", "items": {"type": "object", "required": ["index", "name"]}},
+    "gpu_detection_method": {"type": "string"},
+    "active_jobs": {"type": "integer"},
+    "queued_jobs": {"type": "integer"},
+    "job_types": {"type": "array", "items": {"type": "string"}}
+  }
+}
