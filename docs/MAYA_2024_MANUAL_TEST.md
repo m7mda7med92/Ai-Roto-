@@ -1,4 +1,4 @@
-# Maya 2024 manual test checklist (Phase 01)
+# Maya 2024 manual test checklist (Phases 01-02)
 
 These checks require real Autodesk Maya 2024 on Windows and have **not** been
 run yet. Tick each box and note the result; report failures with the
@@ -73,3 +73,21 @@ Start with a **new scene** containing a cube (`polyCube`), saved to disk, so cha
 
 - [ ] F1. Close Maya, run `python scripts\install_maya_plugin.py --uninstall`.
 - [ ] F2. Start Maya: no toolkit shelf, no errors; all other shelves intact.
+
+## G. Phase 02: models and AI Roto
+
+Prepare a short plate (20-50 frames, e.g. `D:\shots\sh010\plate.####.exr` or a `.mov`) with
+one clear subject. Open a toolkit project first (Project Manager) so outputs go to its folders.
+Keep the saved cube scene from section B open.
+
+- [ ] G1. `setup_engine.ps1` (without `-WithSam2`) installs numpy + OpenCV; `diagnostics.py` shows "Engine packages (core)" OK.
+- [ ] G2. Start Engine. **AI Studio → Model Manager** lists 5 models; "Classical (OpenCV GrabCut, CPU)" shows "Ready (built in)"; Install/Remove are disabled for it.
+- [ ] G3. **Roto Studio**: choose the plate, click **Load Plate**. A job appears in the Job Queue; the info line shows frame range and resolution; the viewer shows the first frame; the slider scrubs frames.
+- [ ] G4. Left-click the subject: a green point appears and (with "Update mask after each prompt") a blue mask overlay appears within a few seconds. Right-click the background: red point, mask updates.
+- [ ] G5. Ctrl+drag (or Box mode) draws a yellow box prompt; Undo Prompt / Clear Prompts work.
+- [ ] G6. Set a name and frame range, click **Track Mask**. Progress advances; Maya stays responsive (orbit the viewport during tracking). Cancel works mid-way.
+- [ ] G7. After completion `<project>\roto\<name>\<name>.####.png` and `<name>.roto.json` exist; scrubbing shows the tracked mask on every frame.
+- [ ] G8. Track again with the same name: a dialog asks before overwriting; **No** leaves the files untouched (check modified times).
+- [ ] G9. Optional SAM 2: run `setup_engine.ps1 -WithSam2 -CudaVersion <cuXXX>`; diagnostics shows torch/sam2 and CUDA True. Restart Engine, install **SAM 2.1 Hiera Tiny** (progress shown; Cancel leaves it "Not installed"); then select it in Roto Studio and repeat G4-G7. Note seconds per frame and GPU memory: ________
+- [ ] G10. Remove the SAM 2 model: a confirmation appears; afterwards its folder under `%APPDATA%\MayaAIToolkit\models\` is gone.
+- [ ] G11. Repeat B14: the Maya scene is unchanged (no new nodes, scene not marked modified) after all Roto Studio work.

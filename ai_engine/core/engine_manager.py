@@ -18,6 +18,8 @@ from ai_engine import ENGINE_VERSION
 from ai_engine.core.gpu_manager import GpuManager
 from ai_engine.core.job_queue import JobQueue
 from ai_engine.core.task_manager import TaskManager, build_default_task_manager
+from ai_engine.models.model_manager import ModelManager
+from ai_engine.segmentation.backends import BackendCache
 from ai_engine.server.app import EngineHTTPServer, create_server
 from ai_engine.server.routes import build_router
 from shared.contracts.job_contracts import HealthInfo
@@ -42,7 +44,13 @@ class EngineManager:
         self.session: Optional[EngineSession] = None
 
         self.gpu = GpuManager(settings.get("gpu"))
-        self.tasks = task_manager or build_default_task_manager(settings)
+        models_cfg = settings.get("models", {})
+        self.models = ModelManager(
+            store_dir=Path(models_cfg["store_dir"]) if models_cfg.get("store_dir") else None,
+            catalog_path=Path(models_cfg["catalog"]) if models_cfg.get("catalog") else None,
+            timeout=float(models_cfg.get("download_timeout_seconds", 30)))
+        self.backends = BackendCache(self.models, device=str(models_cfg.get("device", "auto")))
+        self.tasks = task_manager or build_default_task_manager(settings, self.models, self.backends)
         jobs_cfg = settings["jobs"]
         self.jobs = JobQueue(self.tasks, jobs_cfg["max_concurrent_jobs"], jobs_cfg["max_queued_jobs"],
                              jobs_cfg["history_limit"])
@@ -78,6 +86,11 @@ class EngineManager:
             gpu_available=gpu.gpu_available, cuda_available=gpu.cuda_available,
             gpu_devices=list(gpu.devices), gpu_detection_method=gpu.method,
             active_jobs=counts["active"], queued_jobs=counts["queued"], job_types=self.tasks.job_types())
+
+    def capabilities(self) -> Dict[str, Any]:
+        """What this engine environment can run (optional AI packages, loaded model)."""
+        return {"modules": self.backends.capabilities(), "loaded_model": self.backends.loaded(),
+                "model_store": str(self.models.store_dir), "job_types": self.tasks.job_types()}
 
     # ------------------------------------------------------------------ lifecycle
     def serve_forever(self) -> None:

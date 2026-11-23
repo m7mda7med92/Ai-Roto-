@@ -50,9 +50,25 @@ powershell -ExecutionPolicy Bypass -File scripts\setup_engine.ps1
 
 This finds a standalone Python ≥ 3.10 (`py -3.12/-3.11/-3.10`, then `python`),
 rejects Maya interpreters, creates `<toolkit>\.venv_engine`, installs
-`requirements_engine.txt` (empty in Phase 01) and verifies that the engine
-starts. Options: `-PythonExe C:\Python311\python.exe`, `-VenvDir D:\envs\mait`,
-`-Force` (recreate).
+`requirements_engine.txt` (numpy + OpenCV, enough for the built-in CPU roto
+backend) and verifies that the engine starts. Options:
+`-PythonExe C:\Python311\python.exe`, `-VenvDir D:\envs\mait`, `-Force` (recreate).
+
+### Optional: SAM 2.1 (AI segmentation, NVIDIA GPU recommended)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_engine.ps1 -WithSam2 -CudaVersion cu124
+```
+
+This installs PyTorch (CUDA build from download.pytorch.org, several GB) and
+`sam2==1.1.0` into the **engine venv only**. Pick `-CudaVersion` to match your
+driver (`nvidia-smi` shows the highest supported CUDA version): `cu124`
+(default), `cu121`, `cu118`, or `cpu` (works, but very slow). The optional SAM 2
+CUDA extension is skipped (`SAM2_BUILD_CUDA=0`), so no compiler is required.
+
+Then download weights inside Maya: **AI Studio → Model Manager → select a SAM 2.1
+model → Install** (Tiny 156 MB … Large 898 MB, from dl.fbaipublicfiles.com,
+Apache-2.0). Weights are stored in `%APPDATA%\MayaAIToolkit\models\`.
 
 If you use a custom `-VenvDir`, set **Settings → Engine Python** to
 `<VenvDir>\Scripts\python.exe` in the toolkit.
@@ -84,8 +100,13 @@ Stop it with Ctrl+C or **Engine → Stop Engine**.
 ## Files the toolkit creates at runtime
 
 `%APPDATA%\MayaAIToolkit\` contains `user_settings.json` (your overrides only),
-`logs\maya_plugin.jsonl`, `logs\engine.jsonl`, `logs\engine_console.log` and
-`runtime\engine_session.json` (while an engine is running).
+`logs\maya_plugin.jsonl`, `logs\engine.jsonl`, `logs\engine_console.log`,
+`runtime\engine_session.json` (while an engine is running), `models\` (installed
+model weights) and `cache\` (roto viewer proxies when no toolkit project is open).
+
+Inside a toolkit project, Roto Studio writes viewer proxies to
+`<project>\cache\roto_proxies\` and mattes to `<project>\roto\<name>\` (or the
+output folder you choose).
 
 ## Uninstall
 
@@ -94,7 +115,7 @@ Stop it with Ctrl+C or **Engine → Stop Engine**.
    This removes the `.mod` file, `install_info.json` and Maya's cached copy of
    *our* shelf (`Documents\maya\<version>\prefs\shelves\shelf_MayaAIToolkit.mel`)
    – no other shelf is touched.
-3. Optionally delete `%APPDATA%\MayaAIToolkit` (settings and logs), the
+3. Optionally delete `%APPDATA%\MayaAIToolkit` (settings, logs, downloaded models), the
    `.venv_engine` folder and the toolkit folder itself.
 
 ## Troubleshooting
@@ -106,3 +127,7 @@ Stop it with Ctrl+C or **Engine → Stop Engine**.
 | Shelf button missing | Check the `.mod` file exists; run the installer again; or use the drag-and-drop install. |
 | Corporate proxy | Not an issue: the toolkit always bypasses proxies for 127.0.0.1. |
 | Antivirus blocks `python.exe` listening | Allow the venv's `python.exe` for loopback connections. |
+| Roto Studio: "OpenCV/numpy are not installed" | Re-run `setup_engine.ps1` (Phase 02 added core packages). |
+| SAM 2 model installed but jobs fail with "SAM 2 needs 'torch' and 'sam2'" | Run `setup_engine.ps1 -WithSam2`. `diagnostics.py` shows which engine packages are present. |
+| Model download fails behind a corporate proxy | The engine uses the system proxy settings (`HTTPS_PROXY`) for downloads; make sure dl.fbaipublicfiles.com is allowed. |
+| SAM 2 runs out of GPU memory | Use a smaller model (Tiny/Small) or shorter frame ranges. |

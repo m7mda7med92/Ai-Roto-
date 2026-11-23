@@ -40,6 +40,16 @@ DEFAULT_ENGINE_SETTINGS: Dict[str, Any] = {
         "default_steps": 50,
         "max_duration_seconds": 3600.0,
     },
+    "models": {
+        "store_dir": None,               # None = <user dir>/models
+        "catalog": None,                 # None = config/model_catalog.json
+        "download_timeout_seconds": 30,
+        "device": "auto",                # auto | cuda | cpu
+    },
+    "media": {
+        "proxy_max_size": 1280,
+        "proxy_quality": 85,
+    },
 }
 
 
@@ -91,6 +101,9 @@ def validate_engine_settings(settings: Dict[str, Any]) -> None:
     port = server.get("port")
     if not isinstance(port, int) or isinstance(port, bool) or not 0 <= port < 65536:
         raise ConfigError("server.port must be an integer in [0, 65535]")
+    device = settings.get("models", {}).get("device", "auto")
+    if device not in ("auto", "cuda", "cpu"):
+        raise ConfigError("models.device must be auto, cuda or cpu (got %r)" % device)
     jobs = settings["jobs"]
     for key in ("max_concurrent_jobs", "max_queued_jobs", "history_limit"):
         value = jobs.get(key)

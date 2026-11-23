@@ -13,6 +13,7 @@ from maya_plugin.communication.job_manager import JobManager
 from maya_plugin.core.event_manager import EventManager, Events
 from shared.constants.engine_constants import ConnectionState, JobState
 from shared.paths import session_file
+from shared.version import TOOLKIT_VERSION
 
 pytestmark = pytest.mark.process
 
@@ -39,7 +40,7 @@ def test_start_connect_submit_monitor_cancel_stop(services):
     assert future.result(30) is True
     assert connection.state == ConnectionState.CONNECTED
     assert states[:2] == [ConnectionState.STARTING, ConnectionState.CONNECTED]
-    assert connection.owns_engine and connection.status.health.engine_version == "0.1.0"
+    assert connection.owns_engine and connection.status.health.engine_version == TOOLKIT_VERSION
     pid = connection.status.engine_pid
     assert pid != os.getpid()  # independent process
 

@@ -15,6 +15,7 @@ from shared.constants.engine_constants import ALLOWED_BIND_HOSTS, AUTH_HEADER, A
 from shared.contracts.envelopes import parse_envelope
 from shared.contracts.errors import ContractError
 from shared.contracts.job_contracts import HealthInfo, JobRequest, JobStatus
+from shared.contracts.model_contracts import ModelInfo
 from shared.contracts.serialization import dumps, loads
 from shared.version import API_PREFIX
 
@@ -90,6 +91,29 @@ class EngineClient:
 
     def shutdown(self) -> None:
         self._request("POST", "/shutdown", {})
+
+    # models / capabilities (Phase 02)
+    def list_models(self) -> List[ModelInfo]:
+        data = self._request("GET", "/models")
+        try:
+            return [ModelInfo.from_dict(item) for item in data["models"]]
+        except (KeyError, TypeError, ContractError) as exc:
+            raise EngineResponseError(ErrorCode.INVALID_RESPONSE.value, "invalid model list: %s" % exc)
+
+    def get_model(self, model_id: str) -> ModelInfo:
+        return self._parse(ModelInfo, self._request("GET", "/models/%s" % model_id))
+
+    def install_model(self, model_id: str) -> JobStatus:
+        return self._parse(JobStatus, self._request("POST", "/models/%s/install" % model_id, {}))
+
+    def remove_model(self, model_id: str) -> ModelInfo:
+        return self._parse(ModelInfo, self._request("DELETE", "/models/%s" % model_id))
+
+    def capabilities(self) -> Dict[str, Any]:
+        data = self._request("GET", "/capabilities")
+        if not isinstance(data, dict):
+            raise EngineResponseError(ErrorCode.INVALID_RESPONSE.value, "invalid capabilities")
+        return data
 
     # ------------------------------------------------------------------ transport
     @staticmethod

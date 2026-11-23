@@ -45,7 +45,8 @@ Maya, so they are fully tested outside Maya.
 ### B. AI engine (`ai_engine/`)
 
 An independent Python process started with **its own interpreter**
-(`.venv_engine`). Standard library only in Phase 01.
+(`.venv_engine`). The server and job system use only the standard library;
+Phase 02 adds numpy + OpenCV (core) and, optionally, PyTorch + SAM 2.
 
 * `main.py` – CLI entry, config, logging, token, signal handling.
 * `core/engine_manager.py` – lifecycle: bind → write session file → serve →
@@ -58,6 +59,10 @@ An independent Python process started with **its own interpreter**
 * `processors/` – `BaseProcessor` + `SimulatedProcessor`. Future processors
   plug in here without touching the server.
 * `server/` – framework-free router, request pipeline, auth.
+* `models/model_manager.py` – model catalog (`config/model_catalog.json`) and
+  the local model store (Phase 02, see below).
+* `media/frame_source.py` – image sequences and video files read as RGB8.
+* `segmentation/` – prompts, matte refinement and the segmentation backends.
 
 ### C. Communication layer
 
@@ -158,6 +163,47 @@ backstop, the engine's parent-PID watchdog shuts it down if Maya disappears
   (`maya`, `mayapy`, `mayabatch`) are explicitly rejected, and Maya's
   `PYTHONHOME`/`PYTHONPATH` are scrubbed from the engine's environment.
 * **GPU.** Detected at runtime; absence of a GPU is reported, not an error.
+
+## AI Roto (Phase 02)
+
+```
+Maya: Roto Studio panel                       Engine process
+ Load Plate      --job media_proxies-->  open_source() -> JPEG proxies in <project>/cache/roto_proxies/<plate>_<hash>/
+ click / box     (prompts kept in Maya, in source pixels)
+ Segment Frame   --job segment_frame-->  BackendCache.get(model) -> segment() -> refine -> preview PNG
+ Track Mask      --job roto_track----->  track() forward/backward -> <name>.####.png + <name>.roto.json
+ viewer          <-- reads the JPEG/PNG files written by the engine (no pixels over HTTP)
+AI Studio: Model Manager  --GET/DELETE /models, job model_install-->  ModelManager (download, verify, remove)
+```
+
+* **Model store.** `<user dir>/models/<model_id>/` holds the weights and an
+  `installed.json` marker written *last*. Downloads stream to `<file>.part`,
+  are size-checked and SHA-256 checked when the catalog publishes a hash, and
+  are renamed only after the checks pass, so a cancelled or failed install never
+  looks installed. Weights are downloaded only when the artist clicks
+  **Install**; catalog URLs must be `https`. Removing a model asks the artist first.
+* **Backends** (`segmentation/backends.py`) implement `segment(image, prompts)`
+  and `track(read_frame, frames, prompt_frame, prompts, sink, checkpoint)`:
+  * `ClassicalBackend` – OpenCV GrabCut seeded from the prompts; tracking warps
+    the previous mask with backward Farneback optical flow and re-runs GrabCut
+    in a band around the edge. CPU only, no weights, always available.
+  * `Sam2Backend` – SAM 2.1 (`sam2==1.1.0`): `SAM2ImagePredictor` for single
+    frames, `build_sam2_video_predictor` + `propagate_in_video` for tracking
+    (frames are staged as JPEGs in a temp folder, which the predictor requires).
+    CUDA with bfloat16 autocast when available, CPU otherwise (slow).
+  * `BackendCache` keeps one model loaded and serialises GPU inference with a lock.
+* **Jobs.** `model_install`, `media_proxies`, `segment_frame`, `roto_track`.
+  Paths in requests must be absolute. Matte files that already exist are never
+  overwritten unless the request says `overwrite: true`; the Maya UI asks before
+  sending that. A cancelled track stops between frames and writes no manifest.
+* **Outputs.** 8-bit single-channel PNG mattes at source resolution
+  (`<name>.####.png`) and a JSON manifest with the source, model, prompts,
+  refinement settings and per-frame coverage/bbox. Nothing is put into the Maya
+  scene in Phase 02; bringing mattes into Maya (image planes, shaders) will be an
+  explicit, undoable command in a later phase.
+* **Coordinates.** Prompts are stored in source pixels. The viewer maps widget
+  positions through the fitted image rectangle, so proxy size never changes prompt
+  positions.
 
 ## Extending (later phases)
 

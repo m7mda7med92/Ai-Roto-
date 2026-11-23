@@ -62,7 +62,8 @@ def check_static(report: Report) -> None:
         platform.python_version(), sys.executable))
     report.add(INFO, "Toolkit root", str(ROOT))
     for rel in ("maya_plugin", "ai_engine", "shared", "plug-ins/MayaAIToolkit.py", "config/default_settings.json",
-                "config/engine_settings.json", "maya_plugin/resources/shelves/shelf_MayaAIToolkit.mel"):
+                "config/engine_settings.json", "config/model_catalog.json",
+                "maya_plugin/resources/shelves/shelf_MayaAIToolkit.mel"):
         report.add(OK if (ROOT / rel).exists() else FAIL, "File present: %s" % rel)
     for rel in ("config/default_settings.json", "config/engine_settings.json"):
         try:
@@ -124,8 +125,19 @@ def check_static(report: Report) -> None:
                 version = out.stdout.strip()
                 ok = tuple(int(p) for p in version.split(".")[:2]) >= (3, 10)
                 report.add(OK if ok else FAIL, "Engine Python", "%s (Python %s)" % (python, version))
+                check_engine_packages(report, python)
             except (OSError, subprocess.SubprocessError, ValueError) as exc:
                 report.add(FAIL, "Engine Python", "%s cannot run: %s" % (python, exc))
+
+    # Models
+    try:
+        from ai_engine.models.model_manager import ModelManager
+        manager = ModelManager()
+        installed = [m.name for m in manager.list() if m.installed]
+        report.add(OK, "Model catalog", "%d models; installed: %s (store %s)" % (
+            len(manager.catalog), ", ".join(installed) or "none", manager.store_dir))
+    except Exception as exc:
+        report.add(FAIL, "Model catalog", str(exc))
 
     # GPU
     smi = shutil.which("nvidia-smi")
@@ -154,6 +166,42 @@ def check_static(report: Report) -> None:
 
     sess = session_file()
     report.add(INFO, "Engine session file", "%s (%s)" % (sess, "present" if sess.exists() else "absent"))
+
+
+PACKAGE_PROBE = (
+    "import json, importlib\n"
+    "out = {}\n"
+    "for name in ('numpy', 'cv2', 'torch', 'sam2'):\n"
+    "    try:\n"
+    "        mod = importlib.import_module(name)\n"
+    "        out[name] = getattr(mod, '__version__', 'installed')\n"
+    "    except Exception as exc:\n"
+    "        out[name] = None\n"
+    "try:\n"
+    "    import torch\n"
+    "    out['cuda'] = bool(torch.cuda.is_available())\n"
+    "except Exception:\n"
+    "    out['cuda'] = None\n"
+    "print(json.dumps(out))\n"
+)
+
+
+def check_engine_packages(report: Report, python: Path) -> None:
+    """Which AI packages the engine venv has (never imports them into this process)."""
+    try:
+        out = subprocess.run([str(python), "-I", "-c", PACKAGE_PROBE], capture_output=True, text=True, timeout=120)
+        found = json.loads(out.stdout.strip().splitlines()[-1])
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError) as exc:
+        report.add(WARN, "Engine packages", "probe failed: %s" % exc)
+        return
+    core = all(found.get(name) for name in ("numpy", "cv2"))
+    report.add(OK if core else FAIL, "Engine packages (core)", "numpy %s, opencv %s%s" % (
+        found.get("numpy"), found.get("cv2"), "" if core else " - re-run scripts/setup_engine.ps1"))
+    if found.get("torch") and found.get("sam2"):
+        report.add(OK, "Engine packages (SAM 2)", "torch %s, sam2 %s, CUDA available: %s" % (
+            found["torch"], found["sam2"], found.get("cuda")))
+    else:
+        report.add(INFO, "Engine packages (SAM 2)", "not installed (optional: setup_engine.ps1 -WithSam2)")
 
 
 def check_live(report: Report) -> None:

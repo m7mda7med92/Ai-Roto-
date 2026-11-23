@@ -12,6 +12,7 @@ from typing import Optional
 
 from maya_plugin.communication.connection_manager import ConnectionManager
 from maya_plugin.communication.job_manager import JobManager
+from maya_plugin.communication.model_service import ModelService
 from maya_plugin.core.config_manager import ConfigManager
 from maya_plugin.core.environment import EnvironmentInfo, detect_environment
 from maya_plugin.core.event_manager import EventManager, Events
@@ -34,6 +35,7 @@ class AppManager:
         self.connection = ConnectionManager(self.config, self.events)
         self.jobs = JobManager(self.connection, self.config, self.events,
                                client_version=str(self.environment.maya_version or ""))
+        self.models = ModelService(self.connection, self.jobs, self.events)
         self._shut_down = False
         log.info("Toolkit %s initialised" % TOOLKIT_VERSION,
                  extra={"maya": self.environment.maya_version, "python": self.environment.python_version,
@@ -47,6 +49,7 @@ class AppManager:
             return
         self._shut_down = True
         log.info("Toolkit shutting down")
+        self.models.shutdown()
         self.jobs.shutdown()
         self.connection.shutdown()
 

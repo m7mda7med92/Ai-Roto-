@@ -29,6 +29,7 @@ class Events:
     LOG_RECORD = "log.record"                               # payload: {"ts", "level", "logger", "message"}
     PROJECT_CHANGED = "project.changed"                     # payload: Project | None
     SETTINGS_CHANGED = "settings.changed"                   # payload: {"key", "value"}
+    MODELS_UPDATED = "models.updated"                       # payload: {"models": [ModelInfo], "error": str}
 
 
 class EventManager:

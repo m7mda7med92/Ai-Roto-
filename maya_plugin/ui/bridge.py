@@ -22,6 +22,7 @@ class UiBridge(QtCore.QObject):
     log_record = Signal(object)           # {"ts", "level", "logger", "message"}
     project_changed = Signal(object)      # Project | None
     settings_changed = Signal(object)
+    models_updated = Signal(object)       # {"models": [ModelInfo], "error": str}
 
     def __init__(self, events: EventManager, parent: QtCore.QObject = None) -> None:
         super().__init__(parent)
@@ -35,6 +36,7 @@ class UiBridge(QtCore.QObject):
             Events.LOG_RECORD: self.log_record,
             Events.PROJECT_CHANGED: self.project_changed,
             Events.SETTINGS_CHANGED: self.settings_changed,
+            Events.MODELS_UPDATED: self.models_updated,
         }
         for event, signal in mapping.items():
             self._unsubscribers.append(events.subscribe(event, self._forwarder(signal)))

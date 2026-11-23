@@ -11,6 +11,8 @@ from shared.contracts import (  # noqa: F401
     HealthInfo,
     JobRequest,
     JobStatus,
+    ModelFile,
+    ModelInfo,
     dumps,
     loads,
 )
@@ -24,3 +26,9 @@ def make_test_job_request(duration_seconds: float = 20.0, steps: int = 100, labe
     return JobRequest(job_type=SIMULATED_JOB_TYPE,
                       params={"duration_seconds": float(duration_seconds), "steps": int(steps)},
                       label=label, client={"name": "maya", "version": client_version}).validate()
+
+
+def make_job_request(job_type: str, params: dict, label: str = "", client_version: str = "") -> JobRequest:
+    """Build and validate a request for any engine job type."""
+    return JobRequest(job_type=job_type, params=dict(params), label=label[:200],
+                      client={"name": "maya", "version": client_version}).validate()

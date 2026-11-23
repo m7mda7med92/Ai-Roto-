@@ -1,0 +1,71 @@
+{
+  "_comment": "Models the engine can install. Weights are downloaded only on an explicit Install from the toolkit, into <user dir>/models (configurable: engine_settings.json -> models.store_dir). sha256 is null where no official hash is published; the computed hash is recorded at install time.",
+  "models": [
+    {
+      "model_id": "opencv_grabcut",
+      "name": "Classical (OpenCV GrabCut, CPU)",
+      "task": "segmentation",
+      "backend": "classical",
+      "version": "1",
+      "builtin": true,
+      "license": "Apache-2.0 (OpenCV)",
+      "description": "No download, runs on CPU. Good for clean subjects and testing the pipeline; much less accurate than SAM 2 on hair, motion blur and busy backgrounds."
+    },
+    {
+      "model_id": "sam2.1_hiera_tiny",
+      "name": "SAM 2.1 Hiera Tiny",
+      "task": "segmentation",
+      "backend": "sam2",
+      "version": "2.1",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/facebookresearch/sam2",
+      "approx_size_mb": 156,
+      "recommended_vram_gb": 4,
+      "description": "Fastest SAM 2.1 variant. Point/box prompts and video mask propagation.",
+      "files": [{"name": "sam2.1_hiera_tiny.pt", "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt", "sha256": null}],
+      "options": {"config": "configs/sam2.1/sam2.1_hiera_t.yaml"}
+    },
+    {
+      "model_id": "sam2.1_hiera_small",
+      "name": "SAM 2.1 Hiera Small",
+      "task": "segmentation",
+      "backend": "sam2",
+      "version": "2.1",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/facebookresearch/sam2",
+      "approx_size_mb": 184,
+      "recommended_vram_gb": 6,
+      "description": "Good speed/quality balance.",
+      "files": [{"name": "sam2.1_hiera_small.pt", "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt", "sha256": null}],
+      "options": {"config": "configs/sam2.1/sam2.1_hiera_s.yaml"}
+    },
+    {
+      "model_id": "sam2.1_hiera_base_plus",
+      "name": "SAM 2.1 Hiera Base+",
+      "task": "segmentation",
+      "backend": "sam2",
+      "version": "2.1",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/facebookresearch/sam2",
+      "approx_size_mb": 324,
+      "recommended_vram_gb": 8,
+      "description": "Higher quality; recommended default on 8 GB+ GPUs.",
+      "files": [{"name": "sam2.1_hiera_base_plus.pt", "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt", "sha256": null}],
+      "options": {"config": "configs/sam2.1/sam2.1_hiera_b+.yaml"}
+    },
+    {
+      "model_id": "sam2.1_hiera_large",
+      "name": "SAM 2.1 Hiera Large",
+      "task": "segmentation",
+      "backend": "sam2",
+      "version": "2.1",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/facebookresearch/sam2",
+      "approx_size_mb": 898,
+      "recommended_vram_gb": 12,
+      "description": "Best quality, slowest.",
+      "files": [{"name": "sam2.1_hiera_large.pt", "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt", "sha256": null}],
+      "options": {"config": "configs/sam2.1/sam2.1_hiera_l.yaml"}
+    }
+  ]
+}

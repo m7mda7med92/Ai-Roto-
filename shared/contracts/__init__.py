@@ -13,3 +13,4 @@ from shared.contracts.job_contracts import (  # noqa: F401
     MAX_JOB_TYPE_LENGTH,
 )
 from shared.contracts.serialization import dumps, loads  # noqa: F401
+from shared.contracts.model_contracts import ModelFile, ModelInfo  # noqa: F401,E402

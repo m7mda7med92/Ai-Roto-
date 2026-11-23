@@ -1,9 +1,10 @@
 # AI engine dependencies. Installed ONLY into the engine's own virtual environment
 # (scripts/setup_engine.ps1), never into Maya's Python.
 #
-# Phase 01: the engine uses only the Python standard library (http.server,
-# threading, json). Nothing to install yet - this keeps the foundation small
-# and avoids pulling large ML stacks before they are needed.
+# Core (Phase 02): media decoding, proxies, the CPU segmentation fallback.
+numpy>=1.24,<3
+opencv-python-headless>=4.8,<5
 #
-# Phase 02+ will add pinned AI dependencies here (e.g. torch with the CUDA
-# build that matches the installed NVIDIA driver, opencv-python-headless, numpy).
+# Optional SAM 2 support lives in requirements_sam2.txt and is installed with
+#   scripts/setup_engine.ps1 -WithSam2 [-CudaVersion cu124]
+# because PyTorch must come from the index matching your NVIDIA driver.
