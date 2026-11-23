@@ -1,4 +1,4 @@
-# Maya 2024 manual test checklist (Phases 01-02)
+# Maya 2024 manual test checklist (Phases 01-04)
 
 These checks require real Autodesk Maya 2024 on Windows and have **not** been
 run yet. Tick each box and note the result; report failures with the
@@ -108,3 +108,23 @@ difference easiest to see.
 - [ ] H7. `<name>.roto.json` contains a `guides` block (source, frames, used, interval) and per-frame `guide_points_inside` / `guide_box_iou` / `drift`.
 - [ ] H8. **Guide every** = 5 still tracks well and is faster with SAM 2 (optional, needs G9).
 - [ ] H9. Reading the tracking must not change the scene: the current time, the selection and the undo queue are unchanged, the scene is not marked modified, and no nodes were created (repeat B14).
+
+## I. Phase 04: rotomation onto your rig
+
+Use a shot with a tracked camera and an actor fully in frame for most of it, plus your rig
+referenced or imported into the scene, in a neutral pose on one frame.
+
+- [ ] I1. `setup_engine.ps1 -WithPose` finishes and its import check prints the ONNX Runtime providers. `CUDAExecutionProvider` should be listed on the RTX 3090: ________
+- [ ] I2. **Model Manager**: install RTMPose-m (or -x), YOLOX person and MediaPipe Pose heavy. Each downloads (through the company network) and shows Installed. Note any failure and the URL: ________
+- [ ] I3. **Body Tracking → Plate & Subject**: load the plate, draw a box around the actor on one frame. **Track Body** with RTMPose + MediaPipe 3D (+ YOLOX). Progress runs and can be cancelled. The green joints sit on the actor on every frame. Speed per frame: ________
+- [ ] I4. Try MediaPipe as the 2D model too, and a matte manifest from Roto Studio instead of the box.
+- [ ] I5. **Rig & Camera**: choose the tracked camera, frame offset and rig root. **Auto-map** fills the 17 joints correctly (note wrong ones: ________). Map your controls. Save the preset, reload it.
+- [ ] I6. **Fit to Your Camera** with the reference frame on the neutral pose. The orange fitted joints follow the green ones; check the flagged frames. Mean error reported: ________ px
+- [ ] I7. Feet in contact stay planted (foot lock on), and the body is on the ground plane.
+- [ ] I8. **Apply to Maya → Bake FK** over the range. The rig follows the actor through the camera. One **Undo** removes the whole bake.
+- [ ] I9. **Bake IK**: hands/feet IK and poles follow; knees and elbows bend the right way. Undo.
+- [ ] I10. A locked or non-keyable control channel is left alone (no error, not keyed).
+- [ ] I11. **Create Solve Locators**: a group of keyed locators follows the fit. Undo removes it.
+- [ ] I12. **Cleanup**: in a pose where FK and IK agree, **Record Match Pose** for one arm and one leg. Then FK → IK and IK → FK on one frame and on a range: the other side matches without a pop; the switch attribute is keyed if set. **Foot lock** over a range holds the foot. Each is one undo step.
+- [ ] I13. Scene units: repeat I8 in a scene set to metres (or inches). The rig still lands where the fit is (if not, note the scale: ________).
+- [ ] I14. Before any Apply/Cleanup button, the workflow must not change the scene (repeat B14).

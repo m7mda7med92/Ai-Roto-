@@ -241,6 +241,45 @@ Maya scene (query only)                   Maya plugin (pure Python)             
   propagated mask has left it. Every guided frame gets `guide_points_inside`, `guide_box_iou` and a
   `drift` flag in the manifest; the result lists `drift_frames` for the artist to check.
 
+## Rotomation (Phase 04)
+
+Two engine jobs, both cancellable with progress:
+
+* **`pose_track`** (`ai_engine/processors/pose_processors.py`). Params: `source`, `first_frame`,
+  `model_id` (2D), optional `body3d_model_id`, `detector_model_id`, `subject` {frame, box},
+  `matte_manifest`, `start`/`end`, `output_dir`, `name`, `overwrite`. Runs from the seed frame
+  forwards, then backwards. The person box per frame comes from the matte, else the artist box,
+  else the detector (best IoU with the previous box), else the previous frame's joints. Writes
+  `<name>.pose.json`: per frame `bbox`, `box_source`, `kp2d` (17 joints, x/y/confidence) and
+  `kp3d` (camera-space metres, when a 3D model ran).
+* **`roto_fit`**. Params: `pose_file`, `fit_input` (written by Maya: camera per plate frame and
+  the rig's joint world positions on a reference frame, see `roto_requests.build_fit_input`),
+  `options` (`FitOptions`, validated), range, output. Writes `<name>.rotofit.json`: per frame
+  joint world positions `p`, reprojection error `err` and foot `contact`, plus `ground_height`.
+
+Body skeleton (`ai_engine/pose/skeleton.py`): 17 joints (pelvis, hips, knees, ankles, toes, neck,
+head, shoulders, elbows, wrists) mapped from Halpe26 (RTMPose), COCO17 and MediaPipe33.
+Backends (`ai_engine/pose/backends.py`): RTMPose and YOLOX through rtmlib / ONNX Runtime (CUDA,
+falling back to CPU), MediaPipe Pose Landmarker (CPU, 2D + world landmarks). Model zips are
+extracted by the Model Manager (`ModelFile.extract`), with download mirrors (`ModelFile.mirrors`).
+
+**Fit** (`ai_engine/pose/fit.py`, numpy + scipy `least_squares`, soft-L1 loss). The body is a
+rigid pelvis block, a rigid chest block and limb directions with the rig's own bone lengths.
+Residuals per frame: confidence-weighted reprojection through the Maya camera model (same model as
+Phase 03), agreement with the 3D model's bone directions, staying in front of the camera, and unit
+limb directions. Frames are solved in order, each warm-started from the previous one, with a
+restart from the 3D prior's limbs (and a facing flip on cold starts) to escape knee flips. A global
+pass over all frames (sparse Jacobian) adds acceleration smoothing, foot contact locking (contacts
+detected on smoothed sole height/speed) and a ground penalty. Up axis y or z follows the scene.
+
+**Maya side** (`maya_plugin/modules/body_tracking/`): `rig_mapping` (auto-map joints by name
+tokens, rig presets), `retarget` (driver frames from joint positions; control offset
+`C_ref * inv(M_ref)` recorded on the reference frame, then `C(f) = offset * M(f)`; poles go to a
+computed point in the bend plane), `roto_requests` (requests, fit input, bake targets, FK/IK
+match, foot lock). `maya_bridge.bake_world_targets` keys temporary locators, constrains the
+controls with skipped locked/non-keyable/driven axes, runs `bakeResults` and removes the helpers,
+all in one undo chunk.
+
 ## Extending (later phases)
 
 1. Add a processor in `ai_engine/processors/` (subclass `BaseProcessor`, set

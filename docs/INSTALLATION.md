@@ -70,6 +70,18 @@ Then download weights inside Maya: **AI Studio → Model Manager → select a SA
 model → Install** (Tiny 156 MB … Large 898 MB, from dl.fbaipublicfiles.com,
 Apache-2.0). Weights are stored in `%APPDATA%\MayaAIToolkit\models\`.
 
+### Optional: body pose models (rotomation, Phase 04)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_engine.ps1 -WithPose
+```
+
+This installs ONNX Runtime with CUDA (`onnxruntime-gpu`, it brings its own CUDA/cuDNN DLLs),
+MediaPipe and `rtmlib` into the **engine venv only**, then prints the ONNX Runtime providers.
+Then install the models in **Model Manager**: RTMPose-m or -x (2D joints), YOLOX person
+(optional detector) and MediaPipe Pose heavy or full (3D starting motion). See the license notes
+in [PHASE_04_REPORT.md](PHASE_04_REPORT.md#2-model-licenses-please-confirm-with-your-legal-team-for-commercial-work).
+
 ### Company networks that inspect SSL
 
 Some networks re-sign HTTPS with a company certificate that IT installs in Windows. Then:

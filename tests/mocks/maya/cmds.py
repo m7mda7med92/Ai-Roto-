@@ -12,7 +12,8 @@ CALLS: List[Tuple[str, tuple, Dict[str, Any]]] = []
 #: Commands that never modify the scene (UI or pure queries).
 UI_COMMANDS = {"workspaceControl", "deleteUI", "warning", "shelfLayout", "shelfButton", "setParent",
                "layout", "control", "window", "evalDeferred", "inViewMessage"}
-QUERY_ONLY_COMMANDS = {"about", "ls", "objExists", "nodeType", "listRelatives", "getAttr"}
+QUERY_ONLY_COMMANDS = {"about", "ls", "objExists", "nodeType", "listRelatives", "getAttr", "listConnections",
+                       "upAxis"}
 
 _workspace_controls: set = set()
 
@@ -21,6 +22,15 @@ _workspace_controls: set = set()
 #: "vertices": [(x, y, z), ...]}. Shapes are named "<transform>|<short>Shape".
 SCENE: Dict[str, Dict[str, Any]] = {}
 SELECTION: List[str] = []
+#: Phase 04 write commands: keys set with setKeyframe -> {node or plug: {attr: {frame: value}}}
+KEYS: Dict[str, Dict[str, Dict[float, float]]] = {}
+#: plug -> {"lock": bool, "keyable": bool} overrides (default: unlocked and keyable)
+CHANNELS: Dict[str, Dict[str, bool]] = {}
+CREATED: List[str] = []
+DELETED: List[Any] = []
+UNDO: List[str] = []
+_TIME = [1.0]
+_COUNTER = [0]
 _DEFAULT_CAMERAS = ("persp", "top", "front", "side")
 
 
@@ -29,6 +39,12 @@ def reset() -> None:
     _workspace_controls.clear()
     SCENE.clear()
     SELECTION.clear()
+    KEYS.clear()
+    CHANNELS.clear()
+    CREATED.clear()
+    DELETED.clear()
+    UNDO.clear()
+    _TIME[0] = 1.0
 
 
 def add_node(transform: str, kind: str, matrix: Any, attrs: Any = None, vertices: Any = None) -> str:
@@ -64,6 +80,10 @@ def listRelatives(node: str, **kwargs: Any) -> Any:  # noqa: N802
             return [node.rsplit("|", 1)[0]]
         short = node.replace("Shape", "")
         return ["|" + short] if short in _DEFAULT_CAMERAS else None
+    if kwargs.get("allDescendents"):
+        wanted = kwargs.get("type")
+        found = [t for t, n in SCENE.items() if t.startswith(node + "|") and (not wanted or n["kind"] == wanted)]
+        return sorted(found, key=lambda t: -t.count("|")) or None  # Maya lists deepest first
     if kwargs.get("shapes"):
         transform, _is_shape, _attr = _split(node)
         if transform is None:
@@ -81,6 +101,9 @@ def getAttr(name: str, **kwargs: Any) -> Any:  # noqa: N802
     transform, _is_shape, attr = _split(name)
     if transform is None:
         raise ValueError("No object matches name: %s" % name)
+    if kwargs.get("lock") or kwargs.get("keyable"):
+        flags = CHANNELS.get(name, {})
+        return flags.get("lock", False) if kwargs.get("lock") else flags.get("keyable", True)
     node = SCENE[transform]
     frame = kwargs.get("time", 1.0)
     if attr == "worldMatrix[0]":
@@ -173,7 +196,76 @@ def warning(message: str) -> None:
     CALLS.append(("warning", (message,), {}))
 
 
-def __getattr__(name: str) -> Any:
+# ------------------------------------------------------------------ Phase 04 write commands (recorded)
+def _new(name: str) -> str:
+    _COUNTER[0] += 1
+    node = name.replace("#", str(_COUNTER[0]))
+    CREATED.append(node)
+    return node
+
+
+def group(*args: Any, **kwargs: Any) -> str:
+    CALLS.append(("group", args, kwargs))
+    return _new(kwargs.get("name", "group#"))
+
+
+def spaceLocator(*args: Any, **kwargs: Any) -> List[str]:  # noqa: N802
+    CALLS.append(("spaceLocator", args, kwargs))
+    return [_new(kwargs.get("name", "locator#"))]
+
+
+def parent(child: str, new_parent: str, **kwargs: Any) -> List[str]:
+    CALLS.append(("parent", (child, new_parent), kwargs))
+    return [child]
+
+
+def setKeyframe(target: str, **kwargs: Any) -> int:  # noqa: N802
+    CALLS.append(("setKeyframe", (target,), kwargs))
+    attr = kwargs.get("attribute", "")
+    KEYS.setdefault(target, {}).setdefault(attr, {})[float(kwargs.get("time", _TIME[0]))] = kwargs.get("value")
+    return 1
+
+
+def parentConstraint(*args: Any, **kwargs: Any) -> List[str]:  # noqa: N802
+    CALLS.append(("parentConstraint", args, kwargs))
+    return [_new("%s_parentConstraint#" % str(args[-1]).split("|")[-1])]
+
+
+def bakeResults(*args: Any, **kwargs: Any) -> int:  # noqa: N802
+    CALLS.append(("bakeResults", args, kwargs))
+    return 1
+
+
+def delete(*args: Any, **kwargs: Any) -> None:
+    CALLS.append(("delete", args, kwargs))
+    DELETED.append(args[0] if args else None)
+
+
+def currentTime(*args: Any, **kwargs: Any) -> float:  # noqa: N802
+    CALLS.append(("currentTime", args, kwargs))
+    if _is_query(kwargs):
+        return _TIME[0]
+    if args:
+        _TIME[0] = float(args[0])
+    return _TIME[0]
+
+
+def undoInfo(**kwargs: Any) -> None:  # noqa: N802
+    CALLS.append(("undoInfo", (), kwargs))
+    UNDO.append("open:%s" % kwargs.get("chunkName") if kwargs.get("openChunk") else "close")
+
+
+def listConnections(*args: Any, **kwargs: Any) -> Any:  # noqa: N802
+    CALLS.append(("listConnections", args, kwargs))
+    return None
+
+
+def upAxis(**kwargs: Any) -> str:  # noqa: N802
+    CALLS.append(("upAxis", (), kwargs))
+    return "y"
+
+
+def __getattr__(name: str) -> Any:  # noqa: C901
     """Any other command is recorded and treated as potentially scene-modifying."""
     def command(*args: Any, **kwargs: Any) -> None:
         CALLS.append((name, args, kwargs))

@@ -110,24 +110,7 @@ def read_guide_scene(camera: str, includes: list, excludes: list, frames: list,
     from maya import cmds  # type: ignore
     from maya_plugin.modules.roto_studio import maya_guides as mg
 
-    if not cmds.objExists(camera):
-        raise ValueError("camera %s does not exist" % camera)
-    shapes = cmds.listRelatives(camera, shapes=True, type="camera", fullPath=True) or []
-    if not shapes:
-        raise ValueError("%s is not a camera" % camera)
-    shape = shapes[0]
-    fixed = {name: cmds.getAttr("%s.%s" % (shape, name)) for name in
-             ("horizontalFilmAperture", "verticalFilmAperture", "filmFit", "lensSqueezeRatio",
-              "horizontalFilmOffset", "verticalFilmOffset")}
-    cameras = {}
-    for frame in frames:
-        cameras[int(frame)] = mg.CameraSample(
-            world_matrix=_matrix_at(camera, frame),
-            focal_mm=_scalar(cmds.getAttr(shape + ".focalLength", time=frame)),
-            h_aperture_in=_scalar(fixed["horizontalFilmAperture"]),
-            v_aperture_in=_scalar(fixed["verticalFilmAperture"]),
-            film_fit=int(_scalar(fixed["filmFit"])), h_offset_in=_scalar(fixed["horizontalFilmOffset"]),
-            v_offset_in=_scalar(fixed["verticalFilmOffset"]), lens_squeeze=_scalar(fixed["lensSqueezeRatio"]))
+    cameras = read_camera_samples(camera, frames)
     objects = []
     for role, nodes in ((mg.INCLUDE, includes), (mg.EXCLUDE, excludes)):
         for node in nodes:
@@ -143,3 +126,190 @@ def read_guide_scene(camera: str, includes: list, excludes: list, frames: list,
             matrices = {int(frame): _matrix_at(node, frame) for frame in frames}
             objects.append(mg.GuideObject(node, role, kind, local, matrices))
     return mg.GuideScene(camera, cameras, objects)
+
+
+# ------------------------------------------------------------------------------------ Phase 04
+# Rotomation. Reads (camera, rig joints and controls) are query-only, like Phase 03. Writes happen
+# only from explicit buttons, through run_scene_operation (main thread, one undo step).
+
+#: centimetres (Maya's internal unit, used by matrix attributes) -> one unit of each UI linear unit
+_CM_PER_UNIT = {"mm": 0.1, "millimeter": 0.1, "cm": 1.0, "centimeter": 1.0, "m": 100.0, "meter": 100.0,
+                "km": 100000.0, "kilometer": 100000.0, "in": 2.54, "inch": 2.54, "ft": 30.48, "foot": 30.48,
+                "yd": 91.44, "yard": 91.44, "mi": 160934.4, "mile": 160934.4}
+
+
+def internal_to_ui_scale() -> float:
+    """Factor from matrix-attribute units (cm) to the scene's UI linear unit (translate values)."""
+    from maya import cmds  # type: ignore
+    unit = str(cmds.currentUnit(query=True, linear=True))
+    return 1.0 / _CM_PER_UNIT.get(unit, 1.0)
+
+
+def up_axis() -> str:
+    from maya import cmds  # type: ignore
+    try:
+        return "z" if str(cmds.upAxis(query=True, axis=True)).lower() == "z" else "y"
+    except Exception:  # pragma: no cover - very old Maya
+        return "y"
+
+
+def read_camera_samples(camera: str, frames: list) -> dict:
+    """Maya frame -> ``maya_guides.CameraSample`` for the tracked camera (query only)."""
+    from maya import cmds  # type: ignore
+    from maya_plugin.modules.roto_studio import maya_guides as mg
+
+    if not cmds.objExists(camera):
+        raise ValueError("camera %s does not exist" % camera)
+    shapes = cmds.listRelatives(camera, shapes=True, type="camera", fullPath=True) or []
+    if not shapes:
+        raise ValueError("%s is not a camera" % camera)
+    shape = shapes[0]
+    fixed = {name: _scalar(cmds.getAttr("%s.%s" % (shape, name))) for name in
+             ("horizontalFilmAperture", "verticalFilmAperture", "filmFit", "lensSqueezeRatio",
+              "horizontalFilmOffset", "verticalFilmOffset")}
+    return {int(frame): mg.CameraSample(
+        world_matrix=_matrix_at(camera, frame), focal_mm=_scalar(cmds.getAttr(shape + ".focalLength", time=frame)),
+        h_aperture_in=fixed["horizontalFilmAperture"], v_aperture_in=fixed["verticalFilmAperture"],
+        film_fit=int(fixed["filmFit"]), h_offset_in=fixed["horizontalFilmOffset"],
+        v_offset_in=fixed["verticalFilmOffset"], lens_squeeze=fixed["lensSqueezeRatio"]) for frame in frames}
+
+
+def read_world_matrices(nodes: list, frames: list) -> dict:
+    """node -> {frame: world matrix (16 floats, cm)} without changing the current time (query only)."""
+    from maya import cmds  # type: ignore
+    out = {}
+    for node in nodes:
+        if not cmds.objExists(node):
+            raise ValueError("%s does not exist in the scene" % node)
+        out[node] = {int(frame): _matrix_at(node, frame) for frame in frames}
+    return out
+
+
+def joint_hierarchy(root: str) -> list:
+    """``root`` and every joint/transform under it, parents first (for the auto mapping)."""
+    from maya import cmds  # type: ignore
+    below = cmds.listRelatives(root, allDescendents=True, fullPath=True, type="joint") or []
+    return [root] + sorted(below, key=lambda n: (n.count("|"), n))
+
+
+def keyable_channels(node: str, channels: str) -> dict:
+    """{'t': [axes], 'r': [axes]} of translate/rotate axes that are unlocked, keyable and not driven."""
+    from maya import cmds  # type: ignore
+    out: dict = {"t": [], "r": []}
+    for kind, attr in (("t", "translate"), ("r", "rotate")):
+        if kind not in channels:
+            continue
+        for axis in "XYZ":
+            plug = "%s.%s%s" % (node, attr, axis)
+            try:
+                locked = cmds.getAttr(plug, lock=True)
+                keyable = cmds.getAttr(plug, keyable=True)
+            except Exception:
+                continue
+            driven = cmds.listConnections(plug, source=True, destination=False, skipConversionNodes=True,
+                                          type="constraint")
+            if not locked and keyable and not driven:
+                out[kind].append(axis.lower())
+    return out
+
+
+def _restore_time(value: float) -> None:
+    from maya import cmds  # type: ignore
+    try:
+        cmds.currentTime(value, edit=True, update=True)
+    except Exception:  # pragma: no cover
+        pass
+
+
+def bake_world_targets(targets: dict, frames: list, label: str) -> dict:
+    """Make controls follow world matrices and bake them to keys. **Changes the scene** (one undo step).
+
+    ``targets``: control -> {"frames": {frame: 16-float world matrix (cm)}, "channels": "t" | "r" | "tr"}.
+    Temporary locators are keyed at the targets, the controls are constrained to them (unlocked,
+    keyable axes only, no offset), baked over ``frames`` and the helpers are deleted again.
+    """
+    from maya_plugin.modules.body_tracking import retarget as rt
+
+    def operation() -> dict:
+        from maya import cmds  # type: ignore
+        to_ui = internal_to_ui_scale()
+        frames_sorted = sorted(int(f) for f in frames)
+        start_time = cmds.currentTime(query=True)
+        group = cmds.group(empty=True, name="aiRoto_bake_tmp#")
+        constraints, baked, skipped = [], [], {}
+        try:
+            for control, spec in targets.items():
+                channels = keyable_channels(control, spec.get("channels", "tr"))
+                if not channels["t"] and not channels["r"]:
+                    skipped[control] = "no unlocked translate/rotate channels"
+                    continue
+                locator = cmds.spaceLocator(name="aiRoto_target#")[0]
+                locator = cmds.parent(locator, group)[0]
+                previous = None
+                for frame in frames_sorted:
+                    matrix = spec["frames"].get(frame)
+                    if matrix is None:
+                        continue
+                    rotation = rt.unwrap(previous, rt.euler_xyz(matrix))
+                    previous = rotation
+                    values = {"tx": matrix[12] * to_ui, "ty": matrix[13] * to_ui, "tz": matrix[14] * to_ui,
+                              "rx": rotation[0], "ry": rotation[1], "rz": rotation[2]}
+                    for attr, value in values.items():
+                        cmds.setKeyframe(locator, attribute=attr, time=frame, value=value)
+                skip_t = [a for a in "xyz" if a not in channels["t"]]
+                skip_r = [a for a in "xyz" if a not in channels["r"]]
+                kwargs = {"maintainOffset": False}
+                if skip_t:
+                    kwargs["skipTranslate"] = skip_t
+                if skip_r:
+                    kwargs["skipRotate"] = skip_r
+                constraints.extend(cmds.parentConstraint(locator, control, **kwargs) or [])
+                baked.append((control, channels))
+            if baked:
+                attributes = sorted({"%s%s" % (k, a) for _c, ch in baked for k in ("t", "r") for a in ch[k]})
+                cmds.bakeResults([c for c, _ in baked], time=(frames_sorted[0], frames_sorted[-1]),
+                                 simulation=True, attribute=attributes, preserveOutsideKeys=True,
+                                 sampleBy=1, disableImplicitControl=True, minimizeRotation=True)
+        finally:
+            if constraints:
+                cmds.delete(constraints)
+            cmds.delete(group)
+            _restore_time(start_time)
+        return {"baked": [c for c, _ in baked], "skipped": skipped, "frames": len(frames_sorted)}
+
+    return run_scene_operation(label, operation)
+
+
+def create_solve_skeleton(name: str, joints: list, positions: dict) -> str:
+    """Keyed locators at the fitted joints, under ``<name>_solve_grp``. **Changes the scene** (one undo step).
+
+    ``positions``: frame -> list of world positions (cm), in ``joints`` order.
+    """
+    def operation() -> str:
+        from maya import cmds  # type: ignore
+        to_ui = internal_to_ui_scale()
+        group = cmds.group(empty=True, name="%s_solve_grp" % name)
+        for index, joint in enumerate(joints):
+            locator = cmds.spaceLocator(name="%s_%s_loc" % (name, joint))[0]
+            locator = cmds.parent(locator, group)[0]
+            for frame in sorted(positions):
+                point = positions[frame][index]
+                for attr, value in zip(("tx", "ty", "tz"), point):
+                    cmds.setKeyframe(locator, attribute=attr, time=frame, value=float(value) * to_ui)
+        return group
+
+    return run_scene_operation("AI Roto: create solve skeleton", operation)
+
+
+def key_attribute(plug: str, frames: list, value: float, label: str) -> None:
+    """Key ``plug`` to ``value`` on ``frames`` (the IK/FK switch after a match). **Changes the scene**."""
+    def operation() -> None:
+        from maya import cmds  # type: ignore
+        for frame in frames:
+            cmds.setKeyframe(plug, time=frame, value=value)
+    run_scene_operation(label, operation)
+
+
+def current_frame() -> float:
+    from maya import cmds  # type: ignore
+    return float(cmds.currentTime(query=True))

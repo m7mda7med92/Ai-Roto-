@@ -2,7 +2,7 @@
 
 TOOLKIT_NAME = "Maya AI Production Toolkit"
 TOOLKIT_ID = "MayaAIProductionToolkit"
-TOOLKIT_VERSION = "0.3.0"
+TOOLKIT_VERSION = "0.4.0"
 
 #: Bump when the HTTP contract changes in a backwards-incompatible way.
 API_VERSION = "v1"

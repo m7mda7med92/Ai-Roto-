@@ -37,8 +37,10 @@ MODULES: List[ModuleDescriptor] = [
                      "maya_plugin.modules.camera_tracking.panel:CameraTrackingPanel"),
     ModuleDescriptor("object_tracking", "Object Tracking", "2D, 3D, planar and multi-object tracking.",
                      "maya_plugin.modules.object_tracking.panel:ObjectTrackingPanel"),
-    ModuleDescriptor("body_tracking", "Body Tracking", "Person detection, skeleton preview, mocap and retargeting.",
-                     "maya_plugin.modules.body_tracking.panel:BodyTrackingPanel"),
+    ModuleDescriptor("body_tracking", "Body Tracking", "AI body pose, rotomation on your rig through your "
+                     "tracked camera, FK/IK matching and foot locks.",
+                     "maya_plugin.modules.body_tracking.panel:BodyTrackingPanel",
+                     status="Functional (rotomation; Phase 04)"),
     ModuleDescriptor("roto_studio", "Roto Studio", "AI and manual masking, mask tracking and matte refinement.",
                      "maya_plugin.modules.roto_studio.panel:RotoStudioPanel",
                      status="Functional (AI masking + tracking, guided by Maya tracking; Phases 02-03). "

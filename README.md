@@ -4,12 +4,11 @@ An AI-assisted VFX and 3D production toolkit that runs **inside Autodesk Maya**,
 with all heavy processing in an **independent background engine** reached over a
 token-authenticated localhost API.
 
-> **Phase 03 – Roto guided by your Maya tracking.** Track the shot in Maya as usual; Roto
-> Studio reads the tracked camera and the locators/geometry on the subject (read only),
-> projects them onto the plate and uses them to keep the AI mask locked on. Built on Phase 02
-> (Model Manager, click/box prompts, mask tracking, SAM 2.1 + OpenCV CPU fallback). Not yet
-> verified inside real Maya or with SAM 2 weights: see [docs/PHASE_03_REPORT.md](docs/PHASE_03_REPORT.md)
-> ([Phase 02](docs/PHASE_02_REPORT.md), [Phase 01](docs/PHASE_01_REPORT.md)).
+> **Phase 04 – Rotomation onto your rig.** Body Tracking finds the actor's joints on the plate
+> (RTMPose / MediaPipe), fits the motion to your own rig through your tracked Maya camera and bakes
+> it onto your controls, with FK/IK matching and foot lock for cleanup. Not yet verified inside
+> real Maya: see [docs/PHASE_04_REPORT.md](docs/PHASE_04_REPORT.md)
+> ([Phase 03](docs/PHASE_03_REPORT.md), [Phase 02](docs/PHASE_02_REPORT.md), [Phase 01](docs/PHASE_01_REPORT.md)).
 
 ## Quick start (Windows, Maya 2024)
 
@@ -18,7 +17,7 @@ python scripts\install_maya_plugin.py
 powershell -ExecutionPolicy Bypass -File scripts\setup_engine.ps1
 ```
 
-Optional AI segmentation: `setup_engine.ps1 -WithSam2 -CudaVersion cu124`.
+Optional AI segmentation: `setup_engine.ps1 -WithSam2 -CudaVersion cu124`. Optional body pose (rotomation): `-WithPose`.
 
 Start Maya → **MayaAIToolkit** shelf → **AI Toolkit** → **Start Engine** → **Roto Studio** →
 **Load Plate** → click the subject → **Track Mask**.
