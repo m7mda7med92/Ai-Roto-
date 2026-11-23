@@ -74,7 +74,8 @@ Apache-2.0). Weights are stored in `%APPDATA%\MayaAIToolkit\models\`.
 
 Some networks re-sign HTTPS with a company certificate that IT installs in Windows. Then:
 
-* **setup_engine.ps1**: if pip cannot verify a download, the script retries automatically with a
+* **setup_engine.ps1**: before installing, it tests an HTTPS connection to PyPI with pip's own
+  certificate list. If the certificate is not trusted (or any pip step fails), it switches to a
   bundle made from pip's own list plus the Windows certificate stores (written to
   `<venv>\windows_ca_bundle.pem`). If your company gives you its root CA as a file, pass it with
   `-CaBundle C:\path\company_root.pem`. Certificate checks are never switched off.

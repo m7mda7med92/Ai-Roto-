@@ -144,30 +144,74 @@ if (-not (Test-Path $VenvDir)) {
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 if (-not (Test-Path $VenvPython)) { Fail "venv python not found at $VenvPython" }
 
-if ($CaBundle) { Enable-WindowsCertificates $VenvPython }
-Write-Step "Upgrading pip"
-& $VenvPython -m pip install --upgrade pip --disable-pip-version-check
-if ($LASTEXITCODE -ne 0 -and -not $env:PIP_CERT) {
-    Write-Host "   pip could not download. Retrying with the Windows certificate store (SSL-inspecting networks)." -ForegroundColor Yellow
-    Enable-WindowsCertificates $VenvPython
-    & $VenvPython -m pip install --upgrade pip --disable-pip-version-check
+# Can pip's own certificate list reach PyPI? "pip install --upgrade pip" exits 0 even when it
+# cannot download (pip is already installed), so test the connection explicitly.
+$TlsProbe = @"
+import ssl, sys, urllib.request
+try:
+    import pip._vendor.certifi as certifi
+    ctx = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    ctx = ssl.create_default_context()
+try:
+    urllib.request.urlopen('https://pypi.org/simple/pip/', timeout=30, context=ctx).close()
+except ssl.SSLError as exc:
+    print('certificate: %s' % exc); sys.exit(3)
+except Exception as exc:
+    reason = getattr(exc, 'reason', None)
+    if isinstance(reason, ssl.SSLError):
+        print('certificate: %s' % reason); sys.exit(3)
+    print('network: %s' % exc); sys.exit(2)
+"@
+
+# Run pip; on failure retry once with the Windows certificate bundle (if not already in use).
+function Invoke-Pip([string]$what, [string[]]$pipArgs) {
+    & $VenvPython -m pip @pipArgs --disable-pip-version-check
+    if ($LASTEXITCODE -ne 0 -and -not $env:PIP_CERT) {
+        Write-Host "   $what failed. Retrying with the Windows certificate store (SSL-inspecting networks)." -ForegroundColor Yellow
+        Enable-WindowsCertificates $VenvPython
+        & $VenvPython -m pip @pipArgs --disable-pip-version-check
+    }
+    if ($LASTEXITCODE -ne 0) { Fail "$what failed (network or certificate problem; see the pip error above)" }
 }
-if ($LASTEXITCODE -ne 0) { Fail "pip upgrade failed (network or certificate problem; see the pip error above)" }
+
+if ($CaBundle) {
+    Enable-WindowsCertificates $VenvPython
+} else {
+    Write-Step "Checking the HTTPS connection to PyPI"
+    $probeFile = Join-Path $VenvDir "tls_probe.py"
+    [IO.File]::WriteAllText($probeFile, $TlsProbe, [Text.Encoding]::ASCII)
+    try {
+        $probe = & $VenvPython $probeFile
+        $probeCode = $LASTEXITCODE
+    } catch {
+        $probe = "$_"; $probeCode = 2
+    } finally { Remove-Item $probeFile -ErrorAction SilentlyContinue }
+    if ($probeCode -eq 3) {
+        Write-Host "   pip's certificates are not trusted on this network ($probe)." -ForegroundColor Yellow
+        Write-Host "   Using the Windows certificate store instead (SSL inspection)." -ForegroundColor Yellow
+        Enable-WindowsCertificates $VenvPython
+    } elseif ($probeCode -ne 0) {
+        Write-Host "   warning: $probe" -ForegroundColor Yellow
+    } else {
+        Write-Host "   OK"
+    }
+}
+Write-Step "Upgrading pip"
+Invoke-Pip "pip upgrade" @("install", "--upgrade", "pip")
 
 Write-Step "Installing engine requirements"
-& $VenvPython -m pip install -r $Requirements --disable-pip-version-check
-if ($LASTEXITCODE -ne 0) { Fail "requirements install failed" }
+Invoke-Pip "requirements install" @("install", "-r", $Requirements)
 
 # ---------------------------------------------------------------- optional SAM 2
 if ($WithSam2) {
     Write-Step "Installing PyTorch ($CudaVersion) for SAM 2 - this is a large download"
-    & $VenvPython -m pip install "torch>=2.5.1" "torchvision>=0.20.1" --index-url "https://download.pytorch.org/whl/$CudaVersion" --disable-pip-version-check
-    if ($LASTEXITCODE -ne 0) { Fail "PyTorch install failed (try another -CudaVersion)" }
+    Invoke-Pip "PyTorch install (if it is not a certificate problem, try another -CudaVersion)" @(
+        "install", "torch>=2.5.1", "torchvision>=0.20.1", "--index-url", "https://download.pytorch.org/whl/$CudaVersion")
     Write-Step "Installing SAM 2"
     $env:SAM2_BUILD_CUDA = "0"   # skip the optional CUDA extension (needs a compiler)
     try {
-        & $VenvPython -m pip install -r $Sam2Requirements --disable-pip-version-check
-        if ($LASTEXITCODE -ne 0) { Fail "SAM 2 install failed" }
+        Invoke-Pip "SAM 2 install" @("install", "-r", $Sam2Requirements)
     } finally { Remove-Item Env:\SAM2_BUILD_CUDA -ErrorAction SilentlyContinue }
     $cuda = & $VenvPython -c "import torch, sam2; print('torch %s, CUDA available: %s' % (torch.__version__, torch.cuda.is_available()))"
     if ($LASTEXITCODE -ne 0) { Fail "SAM 2 import check failed" }
