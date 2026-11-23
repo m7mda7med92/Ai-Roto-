@@ -14,7 +14,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import shutil
+import ssl
 import threading
 import time
 import urllib.parse
@@ -34,6 +36,38 @@ MARKER = "installed.json"
 
 class ModelError(Exception):
     pass
+
+
+#: Optional extra PEM file with CA certificates (e.g. a company's SSL-inspection root).
+CA_BUNDLE_ENV = "MAIT_CA_BUNDLE"
+
+
+def https_context() -> ssl.SSLContext:
+    """TLS context for model downloads.
+
+    Uses the operating system's trust store through ``truststore`` when it is installed (it is in
+    requirements_engine.txt). On Windows that is the certificate store that IT departments use
+    for SSL-inspection proxies, so downloads work behind them without disabling verification.
+    Falls back to Python's default context. ``MAIT_CA_BUNDLE`` can name an extra PEM file.
+    Certificate verification is never turned off.
+    """
+    context: ssl.SSLContext
+    try:
+        import truststore  # type: ignore
+        context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        source = "system trust store (truststore)"
+    except Exception:  # truststore missing, or the OS store is unavailable
+        context = ssl.create_default_context()
+        source = "Python default certificates"
+    extra = os.environ.get(CA_BUNDLE_ENV, "").strip()
+    if extra:
+        try:
+            context.load_verify_locations(cafile=extra)
+            source += " + %s" % extra
+        except (OSError, ssl.SSLError) as exc:
+            raise ModelError("%s=%s could not be loaded: %s" % (CA_BUNDLE_ENV, extra, exc))
+    log.debug("HTTPS trust: %s", source)
+    return context
 
 
 class UnknownModel(ModelError, KeyError):
@@ -194,7 +228,9 @@ class ModelManager:
         received = 0
         request = urllib.request.Request(url, headers={"User-Agent": "MayaAIToolkit-ModelManager"})
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response, open(str(part), "wb") as out:
+            context = https_context() if url.lower().startswith("https:") else None
+            with urllib.request.urlopen(request, timeout=self.timeout, context=context) as response, \
+                    open(str(part), "wb") as out:
                 total = int(response.headers.get("Content-Length") or 0) or expected_size or 0
                 last = 0.0
                 while True:
@@ -213,8 +249,15 @@ class ModelManager:
                             target.name, received / 1e6, ("%.1f" % (total / 1e6)) if total else "?"))
         except BaseException as exc:
             part.unlink(missing_ok=True)
+            if isinstance(exc, ModelError):
+                raise
             if isinstance(exc, (OSError, ValueError)):
-                raise ModelError("download failed for %s: %s" % (url, exc))
+                hint = ""
+                if "CERTIFICATE_VERIFY_FAILED" in str(exc):
+                    hint = (" - the certificate is not trusted. If your network inspects SSL, make sure "
+                            "'truststore' is installed in the engine venv (re-run setup_engine.ps1) or set "
+                            "%s to your company's CA file." % CA_BUNDLE_ENV)
+                raise ModelError("download failed for %s: %s%s" % (url, exc, hint))
             raise
         if expected_size is not None and received != expected_size:
             part.unlink(missing_ok=True)

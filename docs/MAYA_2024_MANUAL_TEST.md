@@ -91,3 +91,20 @@ Keep the saved cube scene from section B open.
 - [ ] G9. Optional SAM 2: run `setup_engine.ps1 -WithSam2 -CudaVersion <cuXXX>`; diagnostics shows torch/sam2 and CUDA True. Restart Engine, install **SAM 2.1 Hiera Tiny** (progress shown; Cancel leaves it "Not installed"); then select it in Roto Studio and repeat G4-G7. Note seconds per frame and GPU memory: ________
 - [ ] G10. Remove the SAM 2 model: a confirmation appears; afterwards its folder under `%APPDATA%\MayaAIToolkit\models\` is gone.
 - [ ] G11. Repeat B14: the Maya scene is unchanged (no new nodes, scene not marked modified) after all Roto Studio work.
+
+## H. Phase 03: roto guided by your Maya tracking
+
+Use a shot you have already tracked in Maya: a solved camera with the plate frame range, and
+either locators that sit on the subject (object track, or locators parented to a tracked rig) or
+simple geometry that follows it. Fast motion, motion blur or a brief occlusion makes the
+difference easiest to see.
+
+- [ ] H1. **Roto Studio → Guide from Maya Tracking**: **Refresh** lists the scene cameras with your tracked camera before persp/top/front/side. Choose it.
+- [ ] H2. Select the subject locator(s) / geometry in the Outliner and click **Add Selected** under *Subject (include)*. Optionally add an object to *Exclude*. Remove works.
+- [ ] H3. Load the plate (G3), then **Read Tracking from Maya**. The status shows "Guides on N of M frames". Scrubbing shows cyan crosses (locators) and a dotted cyan box (geometry) sitting on the subject on every frame. If they are offset in time, set **Maya frame offset** (Maya frame = plate frame + offset) and read again.
+- [ ] H4. The guides line up spatially with the plate. Check with film fit Fill, Horizontal and Vertical, and with a film offset if your camera uses one. Note any mismatch and the camera settings: ________
+- [ ] H5. On a frame with a guide, **Use Guide as Prompt** fills the prompts and the mask preview appears. Without any clicks, **Track Mask** also works (it starts from the guide on the current frame).
+- [ ] H6. Track the same shot once with *Use guides when tracking* off and once with it on (different names). The guided version holds the subject through the hard frames. If the status lists frames where the mask left the guide, check those frames.
+- [ ] H7. `<name>.roto.json` contains a `guides` block (source, frames, used, interval) and per-frame `guide_points_inside` / `guide_box_iou` / `drift`.
+- [ ] H8. **Guide every** = 5 still tracks well and is faster with SAM 2 (optional, needs G9).
+- [ ] H9. Reading the tracking must not change the scene: the current time, the selection and the undo queue are unchanged, the scene is not marked modified, and no nodes were created (repeat B14).

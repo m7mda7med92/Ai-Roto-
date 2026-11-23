@@ -41,7 +41,8 @@ MODULES: List[ModuleDescriptor] = [
                      "maya_plugin.modules.body_tracking.panel:BodyTrackingPanel"),
     ModuleDescriptor("roto_studio", "Roto Studio", "AI and manual masking, mask tracking and matte refinement.",
                      "maya_plugin.modules.roto_studio.panel:RotoStudioPanel",
-                     status="Functional (AI masking + tracking; Phase 02). Manual shapes: later phase"),
+                     status="Functional (AI masking + tracking, guided by Maya tracking; Phases 02-03). "
+                            "Manual shapes: later phase"),
     ModuleDescriptor("depth_geometry", "Depth & Geometry", "Depth maps, point clouds, meshes and ground plane.",
                      "maya_plugin.modules.depth_geometry.panel:DepthGeometryPanel"),
     ModuleDescriptor("node_studio", "Node Studio", "Node-based workflow editor (graph editing foundation).",

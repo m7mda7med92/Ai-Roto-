@@ -126,9 +126,28 @@ def segment_request(source: str, first_frame: int, frame: int, model_id: str, pr
 
 def track_request(source: str, first_frame: int, model_id: str, prompts: PromptState, start: int, end: int,
                   direction: str, refine: Dict[str, Any], output_dir: str, name: str,
-                  overwrite: bool = False) -> JobRequest:
-    return make_job_request(ROTO_TRACK_JOB, {
+                  overwrite: bool = False, guides: Optional[Dict[str, Any]] = None, guide_interval: int = 1,
+                  guide_source: str = "") -> JobRequest:
+    """``guides`` (Phase 03): per-frame prompts projected from the artist's Maya tracking."""
+    params: Dict[str, Any] = {
         "source": source, "first_frame": first_frame, "model_id": model_id, "prompt_frame": prompts.frame,
         "prompts": prompts.to_dict(), "start": start, "end": end, "direction": direction,
         "refine": dict(refine), "output_dir": output_dir, "name": name, "overwrite": overwrite,
-    }, "Track mask '%s' %d-%d" % (name, start, end))
+    }
+    label = "Track mask '%s' %d-%d" % (name, start, end)
+    if guides:
+        params.update({"guides": dict(guides), "guide_interval": int(guide_interval),
+                       "guide_source": guide_source[:500]})
+        label += " (Maya-guided)"
+    return make_job_request(ROTO_TRACK_JOB, params, label)
+
+
+def prompt_state_from_guide(frame: int, guide: Dict[str, Any]) -> PromptState:
+    """Turn the Maya guide of one frame into editable prompts (the artist can add clicks on top)."""
+    state = PromptState()
+    for x, y, label in guide.get("points") or []:
+        state.add_point(frame, x, y, label == 1)
+    if guide.get("box"):
+        state.set_box(frame, *guide["box"])
+    state.frame = frame
+    return state

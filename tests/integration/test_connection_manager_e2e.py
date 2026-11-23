@@ -121,3 +121,48 @@ def test_owned_engine_stopped_on_shutdown(plugin_config):
     connection.shutdown()  # what Maya exit triggers
     from shared.process_utils import pid_exists
     assert wait_until(lambda: not pid_exists(pid), timeout=15)
+
+
+# ------------------------------------------------------------------ venv launcher (Windows Scripts\python.exe)
+def make_launcher(folder, child_code=None):
+    """Mimic Windows' venv ``Scripts\\python.exe``: a launcher that runs the real interpreter as a
+    *child* process (so the engine's PID differs from the process Maya started) and does not
+    forward termination to it."""
+    scripts = folder / "venv" / "Scripts"
+    scripts.mkdir(parents=True)
+    launcher = scripts / "python"
+    target = "[%r, '-c', %r]" % (sys.executable, child_code) if child_code else "[%r] + sys.argv[1:]" % sys.executable
+    launcher.write_text("#!%s\nimport subprocess, sys\nsys.exit(subprocess.call(%s))\n" % (sys.executable, target))
+    launcher.chmod(0o755)
+    return launcher
+
+
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="shebang launcher stand-in is POSIX only")
+def test_start_through_venv_launcher_attaches_to_child_engine(services, plugin_config, tmp_path):
+    from shared.process_utils import pid_exists
+    connection, *_ = services
+    plugin_config.set("engine.python_executable", str(make_launcher(tmp_path)), save=False)
+    started = time.monotonic()
+    assert connection.start_engine().result(30) is True
+    assert time.monotonic() - started < 15  # attached as soon as the child engine was ready
+    launcher_pid = connection._process.pid
+    engine_pid = connection.status.engine_pid
+    assert engine_pid != launcher_pid  # the session file holds the child's PID
+    assert connection.stop_engine().result(20) is True
+    assert wait_until(lambda: not pid_exists(engine_pid), timeout=5)
+    assert not session_file().exists()
+
+
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="shebang launcher stand-in is POSIX only")
+def test_startup_timeout_kills_the_launchers_child(services, plugin_config, tmp_path):
+    from shared.process_utils import pid_exists
+    connection, _jobs, _states, messages, _ = services
+    pid_file = tmp_path / "child.pid"
+    child = "import os, time; open(%r, 'w').write(str(os.getpid())); time.sleep(120)" % str(pid_file)
+    plugin_config.set("engine.python_executable", str(make_launcher(tmp_path, child)), save=False)
+    plugin_config.set("engine.startup_timeout_seconds", 2, save=False)
+    assert connection.start_engine().result(30) is False
+    assert any("did not become ready" in m["message"] for m in messages)
+    child_pid = int(pid_file.read_text())
+    assert wait_until(lambda: not pid_exists(child_pid), timeout=5)  # no orphaned engine left behind
+    assert connection.state == ConnectionState.OFFLINE and not connection.owns_engine

@@ -40,9 +40,21 @@ class SegmentationBackend:
         raise NotImplementedError
 
     def track(self, read_frame: Callable[[int], Any], frames: List[int], prompt_frame: int, prompts: Prompts,
-              sink: MaskSink, checkpoint: Callable[[], None]) -> None:
-        """Segment ``prompt_frame`` and propagate through ``frames`` (ordered, starting at ``prompt_frame``)."""
+              sink: MaskSink, checkpoint: Callable[[], None], guides: Optional[Dict[int, Prompts]] = None) -> None:
+        """Segment ``prompt_frame`` and propagate through ``frames`` (ordered, starting at ``prompt_frame``).
+
+        ``guides`` (Phase 03) maps frame -> extra prompts on later frames, typically projected from the
+        artist's own tracking in Maya. Backends use them to re-anchor the mask on those frames.
+        """
         raise NotImplementedError
+
+
+def box_iou(a: Tuple[float, float, float, float], b: Tuple[float, float, float, float]) -> float:
+    ix0, iy0 = max(a[0], b[0]), max(a[1], b[1])
+    ix1, iy1 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0.0, ix1 - ix0) * max(0.0, iy1 - iy0)
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return float(inter / union) if union > 0 else 0.0
 
 
 # ---------------------------------------------------------------------------------------- classical
@@ -136,10 +148,48 @@ class ClassicalBackend(SegmentationBackend):
                               interpolation=cv2.INTER_LINEAR) > 0
         return mask
 
+    @staticmethod
+    def _agrees(mask: Any, guide: Prompts, scale: float) -> bool:
+        """Does a (work-resolution) mask still sit on the guide? Used to recover after drift/occlusion."""
+        import numpy as np  # type: ignore
+        if not mask.any():
+            return False
+        h, w = mask.shape
+        inside = [mask[min(h - 1, int(y * scale)), min(w - 1, int(x * scale))] for x, y in guide.positive]
+        if inside and sum(bool(v) for v in inside) < 0.5 * len(inside):
+            return False
+        if guide.box is not None:
+            ys, xs = np.nonzero(mask)
+            iou = box_iou((xs.min(), ys.min(), xs.max(), ys.max()), tuple(v * scale for v in guide.box))
+            if iou < 0.3:
+                return False
+        return True
+
+    @staticmethod
+    def _apply_guide(init: Any, guide: Prompts, scale: float, radius: int) -> None:
+        """Constrain a GrabCut init with guide prompts: outside the (padded) box is background."""
+        import cv2  # type: ignore
+        h, w = init.shape
+        if guide.box is not None:
+            x0, y0, x1, y1 = (v * scale for v in guide.box)
+            pad = 0.12 * max(x1 - x0, y1 - y0) + radius
+            x0, y0 = int(max(0, x0 - pad)), int(max(0, y0 - pad))
+            x1, y1 = int(min(w - 1, x1 + pad)), int(min(h - 1, y1 + pad))
+            outside = init.copy()
+            outside[y0:y1 + 1, x0:x1 + 1] = 255
+            init[outside != 255] = cv2.GC_BGD
+            region = init[y0:y1 + 1, x0:x1 + 1]
+            region[region == cv2.GC_BGD] = cv2.GC_PR_BGD  # let GrabCut grow inside the guide box
+        for x, y in guide.positive:
+            cv2.circle(init, (int(x * scale), int(y * scale)), radius, int(cv2.GC_FGD), -1)
+        for x, y in guide.negative:
+            cv2.circle(init, (int(x * scale), int(y * scale)), radius, int(cv2.GC_BGD), -1)
+
     def track(self, read_frame: Callable[[int], Any], frames: List[int], prompt_frame: int, prompts: Prompts,
-              sink: MaskSink, checkpoint: Callable[[], None]) -> None:
+              sink: MaskSink, checkpoint: Callable[[], None], guides: Optional[Dict[int, Prompts]] = None) -> None:
         import cv2  # type: ignore
         import numpy as np  # type: ignore
+        guides = guides or {}
         prev_image = read_frame(frames[0])
         prev_mask = self.segment(prev_image, prompts)
         sink(frames[0], prev_mask)
@@ -157,7 +207,11 @@ class ClassicalBackend(SegmentationBackend):
             grid_x, grid_y = np.meshgrid(np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32))
             warped = cv2.remap(mask_small.astype(np.float32), grid_x + flow[..., 0], grid_y + flow[..., 1],
                                cv2.INTER_LINEAR) > 0.5
-            if not warped.any():
+            guide = guides.get(frame)
+            if guide is not None and not self._agrees(warped, guide, scale):
+                # Lost the subject (occlusion, fast motion): restart from the Maya guide on this frame.
+                mask = self.segment(image, guide)
+            elif not warped.any():
                 mask = np.zeros(image.shape[:2], bool)
             else:
                 band = max(3, int(min(h, w) * 0.02))
@@ -169,9 +223,13 @@ class ClassicalBackend(SegmentationBackend):
                 init[maybe] = cv2.GC_PR_BGD
                 init[warped] = cv2.GC_PR_FGD
                 init[sure_fg] = cv2.GC_FGD
+                if guide is not None:
+                    self._apply_guide(init, guide, scale, max(3, int(min(h, w) * 0.012)))
                 mask_small = self._grabcut(cur_small_rgb, init, None)
                 ys, xs = np.nonzero(sure_fg)
                 keep = list(zip(xs[:: max(1, len(xs) // 20)].tolist(), ys[:: max(1, len(ys) // 20)].tolist()))
+                if guide is not None:
+                    keep += [(int(x * scale), int(y * scale)) for x, y in guide.positive]
                 mask_small = self._largest_components(mask_small, keep)
                 mask = cv2.resize(mask_small.astype(np.uint8), (image.shape[1], image.shape[0]),
                                   interpolation=cv2.INTER_LINEAR) > 0 if scale != 1.0 else mask_small
@@ -226,8 +284,9 @@ class Sam2Backend(SegmentationBackend):
         return masks[0] > 0
 
     def track(self, read_frame: Callable[[int], Any], frames: List[int], prompt_frame: int, prompts: Prompts,
-              sink: MaskSink, checkpoint: Callable[[], None]) -> None:
+              sink: MaskSink, checkpoint: Callable[[], None], guides: Optional[Dict[int, Prompts]] = None) -> None:
         from ai_engine.media.frame_source import write_jpeg
+        guides = guides or {}
         points, labels, box = self._prompt_arrays(prompts)
         # The SAM 2 video predictor reads a folder of "<index>.jpg" frames.
         folder = Path(tempfile.mkdtemp(prefix="mait-sam2-"))
@@ -239,6 +298,15 @@ class Sam2Backend(SegmentationBackend):
                 state = self._video_predictor.init_state(video_path=str(folder), offload_video_to_cpu=True)
                 self._video_predictor.add_new_points_or_box(inference_state=state, frame_idx=0, obj_id=1,
                                                             points=points, labels=labels, box=box)
+                # Maya-tracking guides become extra conditioning prompts on their frames (SAM 2
+                # supports prompts on several frames of one object; propagation uses all of them).
+                for index, frame in enumerate(frames):
+                    guide = guides.get(frame)
+                    if index == 0 or guide is None:
+                        continue
+                    g_points, g_labels, g_box = self._prompt_arrays(guide)
+                    self._video_predictor.add_new_points_or_box(inference_state=state, frame_idx=index, obj_id=1,
+                                                                points=g_points, labels=g_labels, box=g_box)
                 for frame_idx, _obj_ids, mask_logits in self._video_predictor.propagate_in_video(state):
                     checkpoint()
                     sink(frames[frame_idx], (mask_logits[0] > 0.0).cpu().numpy()[0])

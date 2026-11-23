@@ -19,7 +19,8 @@ from typing import Any, Dict, Iterator, List
 
 from ai_engine.processors.base import BaseProcessor, JobContext
 from ai_engine.processors.param_utils import opt_bool, opt_int, req_abs_path, req_name, req_str
-from ai_engine.segmentation.prompts import Prompts
+from ai_engine.segmentation.backends import box_iou
+from ai_engine.segmentation.prompts import Prompts, clip_to_frame, guides_from_dict, guides_to_dict
 from ai_engine.segmentation.refine import RefineSettings, refine_mask
 from shared.contracts.errors import ContractError
 
@@ -78,6 +79,20 @@ class _SegmentationMixin:
             yield backend
         finally:
             self.backends.inference_lock.release()
+
+
+def guide_agreement(mask: Any, guide: Prompts) -> Dict[str, Any]:
+    """How well a final matte matches the Maya guide on that frame (flags drift for the artist)."""
+    h, w = mask.shape[:2]
+    inside = [bool(mask[min(h - 1, int(y)), min(w - 1, int(x))]) for x, y in guide.positive]
+    info: Dict[str, Any] = {}
+    if inside:
+        info["guide_points_inside"] = round(sum(inside) / float(len(inside)), 3)
+    if guide.box is not None:
+        bbox = _bbox(mask)
+        info["guide_box_iou"] = round(box_iou(tuple(bbox), guide.box), 3) if bbox else 0.0
+    info["drift"] = bool(info.get("guide_points_inside", 1.0) < 0.5 or info.get("guide_box_iou", 1.0) < 0.3)
+    return info
 
 
 # ------------------------------------------------------------------------------------------ proxies
@@ -185,7 +200,18 @@ class RotoTrackProcessor(_SegmentationMixin, BaseProcessor):
         out["prompt_frame"] = opt_int(params, "prompt_frame", None)
         if out["prompt_frame"] is None:
             raise ContractError("prompt_frame is required", "prompt_frame")
-        out["prompts"] = self._validate_prompts(params).to_dict()
+        out["guides"] = guides_to_dict(guides_from_dict(params.get("guides")))
+        out["guide_interval"] = opt_int(params, "guide_interval", 1, 1, 1000)
+        source_label = params.get("guide_source", "")
+        if not isinstance(source_label, str) or len(source_label) > 500:
+            raise ContractError("guide_source must be a short string", "guide_source")
+        out["guide_source"] = source_label
+        if params.get("prompts") is None and str(out["prompt_frame"]) in out["guides"]:
+            out["prompts"] = out["guides"][str(out["prompt_frame"])]  # start from the Maya guide
+            out["prompts_from_guide"] = True
+        else:
+            out["prompts"] = self._validate_prompts(params).to_dict()
+            out["prompts_from_guide"] = False
         out["start"] = opt_int(params, "start", None)
         out["end"] = opt_int(params, "end", None)
         if out["start"] is not None and out["end"] is not None and out["start"] > out["end"]:
@@ -235,7 +261,22 @@ class RotoTrackProcessor(_SegmentationMixin, BaseProcessor):
                                       "Choose another name or allow overwrite."
                                       % (len(existing), p["name"], p["output_dir"], existing[0]))
             image = source.read(p["prompt_frame"])
-            prompts = Prompts.from_dict(p["prompts"], image.shape[1], image.shape[0])
+            height, width = image.shape[:2]
+            if p.get("prompts_from_guide"):
+                start_prompts = clip_to_frame(Prompts.from_dict(p["prompts"]), width, height)
+                if start_prompts is None:
+                    raise ValueError("the Maya guide is off screen on the prompt frame %d; pick another frame"
+                                     % p["prompt_frame"])
+                prompts = start_prompts
+            else:
+                prompts = Prompts.from_dict(p["prompts"], width, height)
+            all_guides = {}
+            for frame, guide in guides_from_dict(p["guides"]).items():
+                clipped = clip_to_frame(guide, width, height)
+                if clipped is not None and frame in targets:
+                    all_guides[frame] = clipped
+            used_guides = {f: g for f, g in all_guides.items()
+                           if (f - p["prompt_frame"]) % p["guide_interval"] == 0}
             done: Dict[int, Dict[str, Any]] = {}
             total = max(1, len(targets))
 
@@ -245,23 +286,31 @@ class RotoTrackProcessor(_SegmentationMixin, BaseProcessor):
                 alpha = refine_mask(mask, refine)
                 write_mask_png(self.matte_path(p["output_dir"], p["name"], frame), alpha)
                 done[frame] = {"coverage": round(float((alpha > 127).mean()), 5), "bbox": _bbox(alpha > 127)}
+                guide = all_guides.get(frame)
+                if guide is not None:
+                    done[frame].update(guide_agreement(alpha > 127, guide))
                 ctx.report(0.05 + 0.95 * len(done) / total, "Tracked frame %d (%d/%d)" % (frame, len(done), total))
 
             with self._backend(ctx, p["model_id"]) as backend:
                 for frames in passes:
                     ctx.checkpoint()
-                    backend.track(source.read, frames, p["prompt_frame"], prompts, sink, ctx.checkpoint)
+                    backend.track(source.read, frames, p["prompt_frame"], prompts, sink, ctx.checkpoint,
+                                  guides=used_guides)
         manifest = {
             "toolkit": "MayaAIProductionToolkit", "kind": "roto_matte_sequence", "version": 1,
             "name": p["name"], "source": p["source"], "first_frame_offset": p["first_frame"],
             "model_id": p["model_id"], "backend": backend.name, "prompt_frame": p["prompt_frame"],
             "prompts": p["prompts"], "refine": p["refine"], "direction": p["direction"],
             "frame_range": [targets[0], targets[-1]] if targets else None,
+            "guides": {"source": p["guide_source"], "frames": len(all_guides), "used": len(used_guides),
+                       "interval": p["guide_interval"]} if all_guides else None,
             "pattern": "%s.####.png" % p["name"], "frames": {str(k): v for k, v in sorted(done.items())},
             "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         manifest_path = Path(p["output_dir"]) / ("%s.roto.json" % p["name"])
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        drift = sorted(f for f, info in done.items() if info.get("drift"))
         return {"output_dir": p["output_dir"], "pattern": manifest["pattern"], "manifest": str(manifest_path),
-                "frames_written": len(done), "frame_range": manifest["frame_range"], "backend": backend.name,
+                "guided_frames": len(used_guides), "drift_frames": drift[:500], "frames_written": len(done),
+                "frame_range": manifest["frame_range"], "backend": backend.name,
                 "seconds": round(time.monotonic() - started, 3)}

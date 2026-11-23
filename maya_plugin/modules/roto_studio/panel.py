@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from maya_plugin.modules.base import BaseModulePanel
+from maya_plugin.core import maya_bridge
+from maya_plugin.modules.roto_studio import maya_guides as mg
 from maya_plugin.modules.roto_studio import roto_requests as rr
 from maya_plugin.modules.roto_studio.viewer import RotoViewer
 from maya_plugin.ui.components.widgets import Card, accent_button, check, combo, future_button, grid, path_field, spin
@@ -41,8 +43,9 @@ class _FutureRelay(QtCore.QObject):
 
 
 class RotoStudioPanel(BaseModulePanel):
-    phase_label = "Phase 02 - AI Roto"
-    subtitle = "Click or box a subject, preview the AI mask, then track it through the shot."
+    phase_label = "Phase 03 - AI Roto + Maya guides"
+    subtitle = ("Click or box a subject, preview the AI mask, then track it through the shot. "
+                "Optionally guide it with your own Maya tracking.")
 
     def build(self, layout: QtWidgets.QVBoxLayout) -> None:
         self.plate: Optional[Dict[str, Any]] = None      # media_proxies result
@@ -52,6 +55,8 @@ class RotoStudioPanel(BaseModulePanel):
         self._pending: Dict[str, str] = {}                # job_id -> kind
         self._busy: Dict[str, Optional[str]] = {"proxies": None, "segment": None, "track": None}
         self._segment_dirty = False
+        self.guides: Dict[int, Dict[str, Any]] = {}       # plate frame -> projected Maya guide
+        self.guide_source = ""
         self._relay = _FutureRelay(self)
         self._relay.done.connect(self._on_submitted)
         self._auto_timer = QtCore.QTimer(self)
@@ -171,6 +176,7 @@ class RotoStudioPanel(BaseModulePanel):
         self.track_status.setWordWrap(True)
         tracking.add(self.track_status)
         layout.addLayout(grid([ai, tracking]))
+        layout.addWidget(self._build_guide_card())
 
         # ---------------------------------------------------------------- refinement + manual
         refine = Card("Matte Refinement")
@@ -192,7 +198,167 @@ class RotoStudioPanel(BaseModulePanel):
         self.bridge.connection_changed.connect(lambda _s: self._update_enabled())
         self.bridge.models_updated.connect(self._on_models)
         self._on_models({"models": self.app.models.models(), "error": ""})
+        self.frame_spin.valueChanged.connect(lambda _f: self._update_enabled())
+        if maya_bridge.is_maya_available():
+            self.refresh_cameras()
         self._update_enabled()
+
+    # ================================================================== Maya guides (Phase 03)
+    def _build_guide_card(self) -> QtWidgets.QWidget:
+        card = Card("Guide from Maya Tracking")
+        intro = QtWidgets.QLabel("Use your own tracking in Maya: pick the tracked camera and the locators or "
+                                 "geometry that follow the subject. They are projected onto the plate and keep "
+                                 "the AI mask locked on. The scene is only read, never changed.")
+        intro.setObjectName("Dim")
+        intro.setWordWrap(True)
+        card.add(intro)
+        cam_row = QtWidgets.QHBoxLayout()
+        self.guide_camera = QtWidgets.QComboBox()
+        self.guide_camera.setMinimumWidth(200)
+        self.refresh_cameras_button = QtWidgets.QToolButton()
+        self.refresh_cameras_button.setText("Refresh")
+        self.refresh_cameras_button.setToolTip("List the cameras in the Maya scene")
+        self.refresh_cameras_button.clicked.connect(self.refresh_cameras)
+        cam_row.setContentsMargins(0, 0, 0, 0)
+        cam_row.addWidget(self.guide_camera, 1)
+        cam_row.addWidget(self.refresh_cameras_button)
+        cam_widget = QtWidgets.QWidget()
+        cam_widget.setLayout(cam_row)
+        self.include_list, include_widget = self._node_list("Locators / geometry on the subject")
+        self.exclude_list, exclude_widget = self._node_list("Locators / geometry to keep out of the mask")
+        self.guide_offset = spin(-100000, 100000, 0)
+        self.guide_offset.setToolTip("Maya frame = plate frame + offset")
+        self.guide_interval = spin(1, 100, 1, suffix=" frame(s)")
+        self.guide_interval.setToolTip("Give the AI a guide every N frames (1 = every frame)")
+        card.add_form([("Tracked camera", cam_widget), ("Subject (include)", include_widget),
+                       ("Exclude", exclude_widget), ("Maya frame offset", self.guide_offset),
+                       ("Guide every", self.guide_interval)])
+        buttons = QtWidgets.QHBoxLayout()
+        self.read_guides_button = accent_button("Read Tracking from Maya",
+                                                "Sample the camera and objects over the plate's frames (read only)")
+        self.read_guides_button.clicked.connect(self.read_guides)
+        self.guide_prompt_button = QtWidgets.QPushButton("Use Guide as Prompt")
+        self.guide_prompt_button.setToolTip("Copy the guide on the current frame into the prompts")
+        self.guide_prompt_button.clicked.connect(self.use_guide_as_prompt)
+        self.clear_guides_button = QtWidgets.QPushButton("Clear Guides")
+        self.clear_guides_button.clicked.connect(self.clear_guides)
+        for widget in (self.read_guides_button, self.guide_prompt_button, self.clear_guides_button):
+            buttons.addWidget(widget)
+        buttons.addStretch(1)
+        card.add_layout(buttons)
+        toggles = QtWidgets.QHBoxLayout()
+        self.use_guides = check("Use guides when tracking", True)
+        self.show_guides = check("Show guides in viewer", True)
+        self.show_guides.toggled.connect(lambda _on: self.show_frame(self.frame_spin.value()))
+        toggles.addWidget(self.use_guides)
+        toggles.addWidget(self.show_guides)
+        toggles.addStretch(1)
+        card.add_layout(toggles)
+        self.guide_status = QtWidgets.QLabel("No guides. Read your tracking from Maya after loading the plate.")
+        self.guide_status.setObjectName("Dim")
+        self.guide_status.setWordWrap(True)
+        card.add(self.guide_status)
+        return card
+
+    def _node_list(self, tooltip: str) -> Any:
+        widget = QtWidgets.QWidget()
+        row = QtWidgets.QHBoxLayout(widget)
+        row.setContentsMargins(0, 0, 0, 0)
+        nodes = QtWidgets.QListWidget()
+        nodes.setToolTip(tooltip)
+        nodes.setMaximumHeight(64)
+        nodes.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        column = QtWidgets.QVBoxLayout()
+        add = QtWidgets.QPushButton("Add Selected")
+        add.setToolTip("Add the objects selected in Maya")
+        remove = QtWidgets.QPushButton("Remove")
+        add.clicked.connect(lambda: self._add_selected(nodes))
+        remove.clicked.connect(lambda: [nodes.takeItem(nodes.row(i)) for i in nodes.selectedItems()])
+        column.addWidget(add)
+        column.addWidget(remove)
+        row.addWidget(nodes, 1)
+        row.addLayout(column)
+        nodes.add_button = add  # type: ignore[attr-defined]
+        return nodes, widget
+
+    @staticmethod
+    def _items(nodes: QtWidgets.QListWidget) -> List[str]:
+        return [nodes.item(i).text() for i in range(nodes.count())]
+
+    def _add_selected(self, nodes: QtWidgets.QListWidget) -> None:
+        if not maya_bridge.is_maya_available():
+            self.guide_status.setText("Maya scene not available (standalone preview).")
+            return
+        selected = maya_bridge.selected_transforms()
+        if not selected:
+            self.guide_status.setText("Select locators or geometry in Maya first.")
+            return
+        existing = set(self._items(self.include_list)) | set(self._items(self.exclude_list))
+        for node in selected:
+            if node not in existing:
+                nodes.addItem(node)
+
+    def refresh_cameras(self) -> None:
+        if not maya_bridge.is_maya_available():
+            self.guide_status.setText("Maya scene not available (standalone preview).")
+            return
+        current = self.guide_camera.currentText()
+        self.guide_camera.clear()
+        for camera in maya_bridge.list_cameras():
+            self.guide_camera.addItem(camera)
+        index = self.guide_camera.findText(current)
+        if index >= 0:
+            self.guide_camera.setCurrentIndex(index)
+
+    def read_guides(self) -> None:
+        if not self.plate:
+            self.guide_status.setText("Load the plate first.")
+            return
+        if not maya_bridge.is_maya_available():
+            self.guide_status.setText("Maya scene not available (standalone preview).")
+            return
+        camera = self.guide_camera.currentText()
+        includes = self._items(self.include_list)
+        if not camera or not includes:
+            self.guide_status.setText("Choose the tracked camera and add at least one subject object.")
+            return
+        offset = int(self.guide_offset.value())
+        frames = self.frames()
+        try:
+            scene = maya_bridge.read_guide_scene(camera, includes, self._items(self.exclude_list),
+                                                 [f + offset for f in frames])
+        except Exception as exc:  # scene read errors are shown, never raised into Maya
+            self.guide_status.setText("Could not read the tracking: %s" % exc)
+            return
+        media = self.plate["media"]
+        self.guides = mg.build_guides(scene, frames, int(media["width"]), int(media["height"]), offset)
+        self.guide_source = "maya camera %s; include %s" % (camera.split("|")[-1],
+                                                            ", ".join(n.split("|")[-1] for n in includes))
+        missing = len(frames) - len(self.guides)
+        self.guide_status.setText("Guides on %d of %d frames%s. Camera %s." % (
+            len(self.guides), len(frames),
+            (" (%d frame(s) with the subject off screen)" % missing) if missing else "", camera.split("|")[-1]))
+        self.show_frame(self.frame_spin.value())
+        self._update_enabled()
+
+    def clear_guides(self) -> None:
+        self.guides = {}
+        self.guide_source = ""
+        self.guide_status.setText("Guides cleared.")
+        self.show_frame(self.frame_spin.value())
+        self._update_enabled()
+
+    def use_guide_as_prompt(self) -> None:
+        frame = self.frame_spin.value()
+        guide = self.guides.get(frame)
+        if guide is None:
+            self.guide_status.setText("No guide on frame %d." % frame)
+            return
+        self.prompts = rr.prompt_state_from_guide(frame, guide)
+        self._prompts_changed()
+
+    def _active_guides(self) -> Dict[int, Dict[str, Any]]:
+        return self.guides if self.use_guides.isChecked() else {}
 
     # ================================================================== helpers
     @property
@@ -224,10 +390,16 @@ class RotoStudioPanel(BaseModulePanel):
         connected = self.connected
         has_plate = self.plate is not None
         ready = connected and has_plate and bool(self.model_id()) and self.prompts.is_usable()
+        guide_ready = (connected and has_plate and bool(self.model_id())
+                       and self.frame_spin.value() in self._active_guides())
         self.load_button.setEnabled(connected and self._busy["proxies"] is None)
         self.segment_button.setEnabled(ready and self._busy["segment"] is None)
-        self.track_button.setEnabled(ready and self._busy["track"] is None)
+        self.track_button.setEnabled((ready or guide_ready) and self._busy["track"] is None)
         self.cancel_track_button.setEnabled(self._busy["track"] not in (None, "pending"))
+        has_guides = bool(self.guides)
+        self.guide_prompt_button.setEnabled(self.frame_spin.value() in self.guides)
+        self.clear_guides_button.setEnabled(has_guides)
+        self.read_guides_button.setEnabled(has_plate)
         self.undo_button.setEnabled(not self.prompts.is_empty())
         self.clear_button.setEnabled(not self.prompts.is_empty())
         if not connected:
@@ -255,6 +427,8 @@ class RotoStudioPanel(BaseModulePanel):
         self.prompts.clear()
         self.preview.clear()
         self.track_output = None
+        self.guides = {}
+        self.guide_source = ""
         self.viewer.set_mask(None)
         self.viewer.set_prompts([], None)
         for widget in (self.frame_slider, self.frame_spin, self.range_start, self.range_end):
@@ -281,6 +455,11 @@ class RotoStudioPanel(BaseModulePanel):
         self.viewer.set_prompts(self.prompts.points if on_prompt_frame else [],
                                 self.prompts.box if on_prompt_frame else None)
         self.viewer.set_mask(self._mask_for(frame))
+        guide = self.guides.get(frame) if self.show_guides.isChecked() else None
+        self.viewer.set_guide([tuple(p) for p in guide["points"]] if guide else [],
+                              tuple(guide["box"]) if guide and guide.get("box") else None)
+        if self.guides:
+            self.guide_prompt_button.setEnabled(frame in self.guides)
         hint = "Prompt frame %d" % self.prompts.frame if self.prompts.frame is not None else \
             "Click the subject to add prompts"
         self.viewer.set_message("Frame %d  |  %s" % (frame, hint))
@@ -346,6 +525,9 @@ class RotoStudioPanel(BaseModulePanel):
             self.prompts, self.refine_settings(), str(rr.preview_dir(self.source(), self._project()))))
 
     def track_mask(self) -> None:
+        guides = self._active_guides()
+        if self.plate and not self.prompts.is_usable() and self.frame_spin.value() in guides:
+            self.use_guide_as_prompt()  # start from the Maya guide on the current frame
         if not (self.plate and self.prompts.is_usable() and self.model_id()):
             return
         name = self.matte_name.text().strip()
@@ -381,7 +563,8 @@ class RotoStudioPanel(BaseModulePanel):
         self.track_status.setText("Submitting tracking job...")
         self._submit("track", rr.track_request(
             self.source(), int(self.plate["media"]["first_frame"]), self.model_id(), self.prompts, start, end,
-            direction, self.refine_settings(), output, name, overwrite))
+            direction, self.refine_settings(), output, name, overwrite,
+            mg.guides_payload(guides) if guides else None, int(self.guide_interval.value()), self.guide_source))
 
     def cancel_track(self) -> None:
         job_id = self._busy.get("track")
@@ -436,9 +619,16 @@ class RotoStudioPanel(BaseModulePanel):
             if ok:
                 result = status.result
                 self.track_progress.setValue(100)
-                self.track_status.setText("Wrote %d mattes to %s (%s, %.1fs). Manifest: %s" % (
+                text = "Wrote %d mattes to %s (%s, %.1fs). Manifest: %s" % (
                     result["frames_written"], result["output_dir"], result["backend"], result["seconds"],
-                    os.path.basename(result["manifest"])))
+                    os.path.basename(result["manifest"]))
+                if result.get("guided_frames"):
+                    drift = result.get("drift_frames") or []
+                    text += " Guided on %d frame(s)." % result["guided_frames"]
+                    if drift:
+                        text += " Check frames where the mask left the guide: %s%s" % (
+                            ", ".join(str(f) for f in drift[:10]), "..." if len(drift) > 10 else "")
+                self.track_status.setText(text)
             else:
                 self.track_status.setText("Tracking %s: %s" % (status.state.value, error or "no mattes written"))
             self.show_frame(self.frame_spin.value())

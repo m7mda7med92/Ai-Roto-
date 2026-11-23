@@ -14,7 +14,7 @@ SENSOR_PRESETS = {"Custom": (36.0, 24.0), "Full Frame 35mm": (36.0, 24.0), "Supe
 
 class CameraTrackingPanel(BaseModulePanel):
     def build(self, layout: QtWidgets.QVBoxLayout) -> None:
-        viewer = Card("Footage Viewer", badge="Phase 03")
+        viewer = Card("Footage Viewer", badge="Later")
         viewer.add(ViewerPlaceholder("Footage viewer\n2D tracks and solve overlay will display here", 260))
         layout.addWidget(viewer)
 
@@ -39,19 +39,19 @@ class CameraTrackingPanel(BaseModulePanel):
                         ("Zoom", combo(["Fixed (prime)", "Varying (zoom)"]))])
         layout.addLayout(grid([camera, lens, sensor, focal]))
 
-        tracking = Card("Tracking Settings", badge="Phase 03")
+        tracking = Card("Tracking Settings", badge="Later")
         tracking.add_form([("Feature detector", combo(["Auto", "Corners", "Learned features"])),
                            ("Max features", spin(50, 5000, 400)), ("Pattern size", spin(5, 101, 21, suffix=" px")),
                            ("Search size", spin(10, 401, 61, suffix=" px"))])
-        tracking.add(future_button("Track Forward", "Phase 03"))
-        solve = Card("Solve Settings", badge="Phase 03")
+        tracking.add(future_button("Track Forward", "Later"))
+        solve = Card("Solve Settings", badge="Later")
         solve.add_form([("Solve mode", combo(["Free camera", "Tripod (nodal)"])),
                         ("Refine focal", check("Refine focal length")), ("Refine distortion", check("Refine distortion")),
                         ("Target error", spin(0.05, 5.0, 0.5, 2, " px", 0.05))])
-        solve.add(future_button("Solve Camera", "Phase 03"))
+        solve.add(future_button("Solve Camera", "Later"))
         layout.addLayout(grid([tracking, solve]))
 
-        graph = Card("Track Error Graph", badge="Phase 03")
+        graph = Card("Track Error Graph", badge="Later")
         graph.add(ViewerPlaceholder("Per-frame reprojection error graph", 140))
         layout.addWidget(graph)
 

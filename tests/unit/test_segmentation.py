@@ -74,3 +74,34 @@ def test_backend_cache_and_sam2_without_dependencies(tmp_path):
     if not caps["torch"] or not caps["sam2"]:
         with pytest.raises(BackendUnavailable):
             Sam2Backend(tmp_path / "missing.pt", "configs/sam2.1/sam2.1_hiera_t.yaml")
+
+
+# ------------------------------------------------------------------ Phase 03: Maya guides
+def test_guides_validation_and_clipping():
+    from ai_engine.segmentation.prompts import clip_to_frame, guides_from_dict
+    from shared.contracts.errors import ContractError
+    guides = guides_from_dict({"1001": {"points": [[5, 5, 1]]}, "1002": {"box": [0, 0, 20, 20]}})
+    assert sorted(guides) == [1001, 1002]
+    assert guides_from_dict(None) == {}
+    for bad in ({"x": {"points": [[1, 1, 1]]}}, {"1001": {"points": []}}, [1, 2]):
+        with pytest.raises(ContractError):
+            guides_from_dict(bad)
+    clipped = clip_to_frame(Prompts(points=[(5, 5, 1), (500, 5, 1)], box=(-10, -10, 50, 50)), 100, 100)
+    assert clipped.points == [(5, 5, 1)] and clipped.box == (0.0, 0.0, 50, 50)
+    assert clip_to_frame(Prompts(points=[(500, 5, 1)]), 100, 100) is None
+
+
+@pytest.mark.parametrize("points,box", [(True, True), (True, False), (False, True)])
+def test_maya_guides_keep_classical_track_on_a_fast_subject(tmp_path, points, box):
+    from helpers import jump_guides, jump_plate
+    from ai_engine.media.frame_source import open_source
+    from ai_engine.segmentation.prompts import guides_from_dict
+    pattern, truth = jump_plate(tmp_path / "seq")
+    start = Prompts(points=[(160, 90, 1)])
+    unguided, guided = {}, {}
+    with open_source(pattern) as source:
+        ClassicalBackend().track(source.read, source.frames(), 1001, start, unguided.__setitem__, lambda: None)
+        ClassicalBackend().track(source.read, source.frames(), 1001, start, guided.__setitem__, lambda: None,
+                                 guides=guides_from_dict(jump_guides(points=points, box=box)))
+    assert min(iou(unguided[f], truth[f]) for f in truth) < 0.5  # flow alone loses the subject
+    assert min(iou(guided[f], truth[f]) for f in truth) > 0.85

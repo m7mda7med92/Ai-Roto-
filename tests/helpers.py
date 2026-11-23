@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -100,7 +101,8 @@ def iou(a, b) -> float:
 class FileServer:
     """Loopback HTTP server serving in-memory files (model download tests)."""
 
-    def __init__(self, files: dict, chunk_delay: float = 0.0) -> None:
+    def __init__(self, files: dict, chunk_delay: float = 0.0, tls: Any = None) -> None:
+        """``tls=(certfile, keyfile)`` serves HTTPS (certificate-trust tests)."""
         import http.server
         files_ref, delay = files, chunk_delay
 
@@ -127,10 +129,17 @@ class FileServer:
 
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.server.daemon_threads = True
+        self.scheme = "http"
+        if tls:
+            import ssl
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(*tls)
+            self.server.socket = context.wrap_socket(self.server.socket, server_side=True)
+            self.scheme = "https"
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
     def url(self, name: str) -> str:
-        return "http://127.0.0.1:%d/%s" % (self.server.server_address[1], name)
+        return "%s://127.0.0.1:%d/%s" % (self.scheme, self.server.server_address[1], name)
 
     def __enter__(self) -> "FileServer":
         self.thread.start()
@@ -139,3 +148,53 @@ class FileServer:
     def __exit__(self, *exc: object) -> None:
         self.server.shutdown()
         self.server.server_close()
+
+
+# ------------------------------------------------------------------ Phase 03 (Maya-guided roto)
+JUMP_WIDTH, JUMP_HEIGHT, JUMP_STEP = 480, 180, 45
+
+
+def jump_center(index: int):
+    """Disc centre in the fast-moving plate (too fast for optical flow alone)."""
+    return JUMP_WIDTH // 3 + index * JUMP_STEP, JUMP_HEIGHT // 2
+
+
+def jump_plate(folder: Path, count: int = 6):
+    """Red disc jumping 45 px per frame: unguided tracking loses it, Maya guides recover it."""
+    return synthetic_plate(folder, count=count, width=JUMP_WIDTH, height=JUMP_HEIGHT, step=JUMP_STEP)
+
+
+def jump_guides(count: int = 6, first: int = 1001, points: bool = True, box: bool = True) -> dict:
+    """What projected Maya tracking would give for :func:`jump_plate` (string frame keys)."""
+    radius = max(8, JUMP_HEIGHT // 6)
+    out = {}
+    for index in range(count):
+        x, y = jump_center(index)
+        out[str(first + index)] = {"points": [[x, y, 1]] if points else [],
+                                   "box": [x - radius - 3, y - radius - 3, x + radius + 3, y + radius + 3]
+                                   if box else None}
+    return out
+
+
+def make_private_ca(folder: Path):
+    """A private root CA + a 127.0.0.1 server certificate it signed (like an SSL-inspection proxy).
+
+    Returns ``(ca_pem, server_cert, server_key)`` or ``None`` when the openssl CLI is missing.
+    """
+    import shutil
+    import subprocess
+    if not shutil.which("openssl"):
+        return None
+    folder.mkdir(parents=True, exist_ok=True)
+    ca_key, ca_pem = folder / "ca.key", folder / "ca.pem"
+    key, csr, crt, ext = folder / "server.key", folder / "server.csr", folder / "server.pem", folder / "ext.cnf"
+    ext.write_text("subjectAltName=IP:127.0.0.1\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\n"
+                   "extendedKeyUsage=serverAuth\n")
+    run = lambda *a: subprocess.run(["openssl", *a], check=True, capture_output=True)  # noqa: E731
+    run("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", str(ca_key), "-out", str(ca_pem), "-days", "2",
+        "-subj", "/CN=Test Company Inspection CA", "-addext", "basicConstraints=critical,CA:TRUE",
+        "-addext", "keyUsage=critical,keyCertSign,cRLSign")
+    run("req", "-newkey", "rsa:2048", "-nodes", "-keyout", str(key), "-out", str(csr), "-subj", "/CN=127.0.0.1")
+    run("x509", "-req", "-in", str(csr), "-CA", str(ca_pem), "-CAkey", str(ca_key), "-CAcreateserial",
+        "-out", str(crt), "-days", "2", "-extfile", str(ext))
+    return ca_pem, crt, key

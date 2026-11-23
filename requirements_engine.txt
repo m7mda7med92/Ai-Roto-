@@ -4,6 +4,8 @@
 # Core (Phase 02): media decoding, proxies, the CPU segmentation fallback.
 numpy>=1.24,<3
 opencv-python-headless>=4.8,<5
+# Phase 03: model downloads trust the OS certificate store (works behind SSL-inspecting proxies).
+truststore>=0.9,<1
 #
 # Optional SAM 2 support lives in requirements_sam2.txt and is installed with
 #   scripts/setup_engine.ps1 -WithSam2 [-CudaVersion cu124]

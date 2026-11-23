@@ -70,6 +70,19 @@ Then download weights inside Maya: **AI Studio → Model Manager → select a SA
 model → Install** (Tiny 156 MB … Large 898 MB, from dl.fbaipublicfiles.com,
 Apache-2.0). Weights are stored in `%APPDATA%\MayaAIToolkit\models\`.
 
+### Company networks that inspect SSL
+
+Some networks re-sign HTTPS with a company certificate that IT installs in Windows. Then:
+
+* **setup_engine.ps1**: before installing, it tests an HTTPS connection to PyPI with pip's own
+  certificate list. If the certificate is not trusted (or any pip step fails), it switches to a
+  bundle made from pip's own list plus the Windows certificate stores (written to
+  `<venv>\windows_ca_bundle.pem`). If your company gives you its root CA as a file, pass it with
+  `-CaBundle C:\path\company_root.pem`. Certificate checks are never switched off.
+* **Model Manager downloads** use the Windows certificate store through `truststore` (installed
+  with the engine). An extra PEM file can be added with the `MAIT_CA_BUNDLE` environment
+  variable (set it before starting Maya). `diagnostics.py` shows "Engine HTTPS trust".
+
 If you use a custom `-VenvDir`, set **Settings → Engine Python** to
 `<VenvDir>\Scripts\python.exe` in the toolkit.
 

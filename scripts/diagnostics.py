@@ -171,7 +171,7 @@ def check_static(report: Report) -> None:
 PACKAGE_PROBE = (
     "import json, importlib\n"
     "out = {}\n"
-    "for name in ('numpy', 'cv2', 'torch', 'sam2'):\n"
+    "for name in ('numpy', 'cv2', 'truststore', 'torch', 'sam2'):\n"
     "    try:\n"
     "        mod = importlib.import_module(name)\n"
     "        out[name] = getattr(mod, '__version__', 'installed')\n"
@@ -197,6 +197,12 @@ def check_engine_packages(report: Report, python: Path) -> None:
     core = all(found.get(name) for name in ("numpy", "cv2"))
     report.add(OK if core else FAIL, "Engine packages (core)", "numpy %s, opencv %s%s" % (
         found.get("numpy"), found.get("cv2"), "" if core else " - re-run scripts/setup_engine.ps1"))
+    if found.get("truststore"):
+        report.add(OK, "Engine HTTPS trust", "truststore %s: model downloads use the Windows certificate store"
+                   % found["truststore"])
+    else:
+        report.add(WARN, "Engine HTTPS trust", "truststore not installed: model downloads may fail on networks "
+                   "that inspect SSL - re-run scripts/setup_engine.ps1")
     if found.get("torch") and found.get("sam2"):
         report.add(OK, "Engine packages (SAM 2)", "torch %s, sam2 %s, CUDA available: %s" % (
             found["torch"], found["sam2"], found.get("cuda")))

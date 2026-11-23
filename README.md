@@ -4,12 +4,12 @@ An AI-assisted VFX and 3D production toolkit that runs **inside Autodesk Maya**,
 with all heavy processing in an **independent background engine** reached over a
 token-authenticated localhost API.
 
-> **Phase 02 – AI Roto.** Model Manager (download/verify/remove weights in the
-> engine), Roto Studio with click/box prompts, AI mask preview, mask tracking
-> through a shot and matte refinement. Backends: SAM 2.1 (optional, GPU) and a
-> built-in OpenCV CPU fallback. Not yet verified inside real Maya or with SAM 2
-> weights: see [docs/PHASE_02_REPORT.md](docs/PHASE_02_REPORT.md)
-> ([Phase 01 report](docs/PHASE_01_REPORT.md)).
+> **Phase 03 – Roto guided by your Maya tracking.** Track the shot in Maya as usual; Roto
+> Studio reads the tracked camera and the locators/geometry on the subject (read only),
+> projects them onto the plate and uses them to keep the AI mask locked on. Built on Phase 02
+> (Model Manager, click/box prompts, mask tracking, SAM 2.1 + OpenCV CPU fallback). Not yet
+> verified inside real Maya or with SAM 2 weights: see [docs/PHASE_03_REPORT.md](docs/PHASE_03_REPORT.md)
+> ([Phase 02](docs/PHASE_02_REPORT.md), [Phase 01](docs/PHASE_01_REPORT.md)).
 
 ## Quick start (Windows, Maya 2024)
 

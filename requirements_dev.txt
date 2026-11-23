@@ -3,3 +3,5 @@ pytest>=7.4
 # Phase 02 engine tests (skipped if missing). With PySide2 5.15 use numpy<2.
 numpy>=1.24,<3
 opencv-python-headless>=4.8,<5
+# HTTPS trust tests.
+truststore>=0.9,<1
