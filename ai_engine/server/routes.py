@@ -48,7 +48,7 @@ class Router:
         self._routes: List[Route] = []
 
     def add(self, method: str, template: str, handler: Handler, name: str) -> None:
-        regex = "^" + re.sub(r"\{(\w+)\}", r"(?P<\1>[A-Za-z0-9_\-]{1,64})", template) + "$"
+        regex = "^" + re.sub(r"\{(\w+)\}", r"(?P<\1>[A-Za-z0-9_][A-Za-z0-9_.\-]{0,63})", template) + "$"
         self._routes.append(Route(method.upper(), re.compile(regex), handler, name))
 
     def resolve(self, method: str, path: str) -> Tuple[Route, Dict[str, str]]:
@@ -116,6 +116,39 @@ def build_router(engine: Any) -> Router:
     def job_types(_req: Request) -> Tuple[int, Any]:
         return 200, {"job_types": engine.tasks.describe()}
 
+    # ---------------------------------------------------------------- models
+    from ai_engine.models.model_manager import ModelBusy, ModelError, UnknownModel
+
+    def model_errors(fn: Callable[[], Any]) -> Any:
+        try:
+            return fn()
+        except UnknownModel as exc:
+            raise ApiError(404, ErrorCode.NOT_FOUND, "model %s not found" % exc.args[0])
+        except ModelBusy as exc:
+            raise ApiError(409, ErrorCode.INVALID_STATE, str(exc))
+        except ModelError as exc:
+            raise ApiError(409, ErrorCode.INVALID_STATE, str(exc))
+
+    def list_models(_req: Request) -> Tuple[int, Any]:
+        return 200, {"models": [m.to_dict() for m in engine.models.list()], "store_dir": str(engine.models.store_dir)}
+
+    def get_model(req: Request) -> Tuple[int, Any]:
+        return 200, model_errors(lambda: engine.models.get(req.params["model_id"])).to_dict()
+
+    def install_model(req: Request) -> Tuple[int, Any]:
+        body = {"job_type": "model_install", "params": {"model_id": req.params["model_id"]},
+                "label": "Install model " + req.params["model_id"]}
+        model_errors(lambda: engine.models.get(req.params["model_id"]))
+        return submit_job(Request("POST", req.path, req.params, body))
+
+    def remove_model(req: Request) -> Tuple[int, Any]:
+        model_id = req.params["model_id"]
+        engine.backends.evict(model_id)
+        return 200, model_errors(lambda: engine.models.remove(model_id)).to_dict()
+
+    def capabilities(_req: Request) -> Tuple[int, Any]:
+        return 200, engine.capabilities()
+
     def shutdown(_req: Request) -> Tuple[int, Any]:
         engine.request_shutdown(reason="api")
         return 202, {"status": "shutting_down"}
@@ -129,5 +162,10 @@ def build_router(engine: Any) -> Router:
     router.add("POST", API_PREFIX + "/jobs/{job_id}/cancel", cancel_job, "cancel_job")
     router.add("POST", API_PREFIX + "/jobs/{job_id}/pause", pause_job, "pause_job")
     router.add("POST", API_PREFIX + "/jobs/{job_id}/resume", resume_job, "resume_job")
+    router.add("GET", API_PREFIX + "/capabilities", capabilities, "capabilities")
+    router.add("GET", API_PREFIX + "/models", list_models, "list_models")
+    router.add("GET", API_PREFIX + "/models/{model_id}", get_model, "get_model")
+    router.add("DELETE", API_PREFIX + "/models/{model_id}", remove_model, "remove_model")
+    router.add("POST", API_PREFIX + "/models/{model_id}/install", install_model, "install_model")
     router.add("POST", API_PREFIX + "/shutdown", shutdown, "shutdown")
     return router

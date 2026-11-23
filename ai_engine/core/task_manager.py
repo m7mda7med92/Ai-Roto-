@@ -40,11 +40,25 @@ class TaskManager:
             return [{"job_type": k, "description": p.description} for k, p in sorted(self._processors.items())]
 
 
-def build_default_task_manager(settings: Optional[Dict[str, Any]] = None) -> TaskManager:
-    """Register the processors available in this phase."""
+def build_default_task_manager(settings: Optional[Dict[str, Any]] = None, model_manager: Any = None,
+                               backend_cache: Any = None) -> TaskManager:
+    """Register the processors available in this phase.
+
+    The AI processors need the engine's model store and backend cache; without them
+    (e.g. bare unit tests) only the simulated job is registered.
+    """
     from ai_engine.processors.simulated_processor import SimulatedProcessor
 
     settings = settings or {}
     manager = TaskManager()
     manager.register(SimulatedProcessor(settings.get("simulated_job", {})))
+    if model_manager is not None and backend_cache is not None:
+        from ai_engine.processors.model_processors import ModelInstallProcessor
+        from ai_engine.processors.roto_processors import (MediaProxiesProcessor, RotoTrackProcessor,
+                                                          SegmentFrameProcessor)
+        media = settings.get("media", {})
+        manager.register(ModelInstallProcessor(model_manager, backend_cache))
+        manager.register(MediaProxiesProcessor(media))
+        manager.register(SegmentFrameProcessor(model_manager, backend_cache, media))
+        manager.register(RotoTrackProcessor(model_manager, backend_cache, media))
     return manager

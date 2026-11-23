@@ -1,0 +1,5 @@
+# Optional: Meta SAM 2.1 segmentation backend for the AI engine.
+# Install with scripts/setup_engine.ps1 -WithSam2 (installs a CUDA build of torch first).
+# The CUDA extension of SAM 2 is optional; the setup script sets SAM2_BUILD_CUDA=0 so no
+# compiler is needed (SAM 2 then skips the optional mask post-processing step).
+sam2==1.1.0

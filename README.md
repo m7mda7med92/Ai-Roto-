@@ -4,9 +4,12 @@ An AI-assisted VFX and 3D production toolkit that runs **inside Autodesk Maya**,
 with all heavy processing in an **independent background engine** reached over a
 token-authenticated localhost API.
 
-> **Phase 01 – foundation.** Architecture, dockable Maya UI for all modules,
-> engine with a *simulated* job, connection manager, installer, tests and docs.
-> No AI models or tracking algorithms yet. See [docs/PHASE_01_REPORT.md](docs/PHASE_01_REPORT.md).
+> **Phase 02 – AI Roto.** Model Manager (download/verify/remove weights in the
+> engine), Roto Studio with click/box prompts, AI mask preview, mask tracking
+> through a shot and matte refinement. Backends: SAM 2.1 (optional, GPU) and a
+> built-in OpenCV CPU fallback. Not yet verified inside real Maya or with SAM 2
+> weights: see [docs/PHASE_02_REPORT.md](docs/PHASE_02_REPORT.md)
+> ([Phase 01 report](docs/PHASE_01_REPORT.md)).
 
 ## Quick start (Windows, Maya 2024)
 
@@ -15,7 +18,10 @@ python scripts\install_maya_plugin.py
 powershell -ExecutionPolicy Bypass -File scripts\setup_engine.ps1
 ```
 
-Start Maya → **MayaAIToolkit** shelf → **AI Toolkit** → **Start Engine** → **Test Processing**.
+Optional AI segmentation: `setup_engine.ps1 -WithSam2 -CudaVersion cu124`.
+
+Start Maya → **MayaAIToolkit** shelf → **AI Toolkit** → **Start Engine** → **Roto Studio** →
+**Load Plate** → click the subject → **Track Mask**.
 
 Full guide: [docs/INSTALLATION.md](docs/INSTALLATION.md) ·
 Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
@@ -31,10 +37,11 @@ maya_plugin/          Maya side (UI, connection/job managers, config, modules)
   ui/                 Qt shim, theme, main window, panels, dialogs, dock host
   modules/            10 feature modules (Project Manager ... Pipeline Manager)
   resources/          shelf + icons
-ai_engine/            independent engine process (HTTP server, auth, job queue, processors)
+ai_engine/            independent engine process (HTTP server, auth, job queue, processors,
+                      model store, media I/O, segmentation backends)
 shared/               wire contracts, constants, JSON schemas, session file (stdlib only)
 plug-ins/             Maya plug-in shim (registers the mayaAIToolkit command)
-config/               default plugin settings, engine settings
+config/               default plugin settings, engine settings, model catalog
 scripts/              install, engine setup/start, diagnostics
 tests/                unit, integration (real engine processes), mock_maya (fake maya + offscreen Qt)
 docs/                 architecture, installation, development, manual tests, phase report

@@ -18,22 +18,37 @@
 .PARAMETER Force
     Delete and recreate an existing venv.
 
+.PARAMETER WithSam2
+    Also install the optional SAM 2.1 backend: PyTorch (CUDA build) + sam2.
+    Downloads several GB. Model weights are NOT downloaded here; install them
+    from AI Studio > Model Manager.
+
+.PARAMETER CudaVersion
+    PyTorch wheel flavour used with -WithSam2: cu118, cu121, cu124 (default) or cpu.
+    Pick one supported by your NVIDIA driver (see "nvidia-smi", top right "CUDA Version").
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File scripts\setup_engine.ps1
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File scripts\setup_engine.ps1 -PythonExe "C:\Python311\python.exe"
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File scripts\setup_engine.ps1 -WithSam2 -CudaVersion cu124
 #>
 [CmdletBinding()]
 param(
     [string]$PythonExe = "",
     [string]$VenvDir = "",
-    [switch]$Force
+    [switch]$Force,
+    [switch]$WithSam2,
+    [ValidateSet("cu118", "cu121", "cu124", "cpu")]
+    [string]$CudaVersion = "cu124"
 )
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 if (-not $VenvDir) { $VenvDir = Join-Path $Root ".venv_engine" }
 $Requirements = Join-Path $Root "requirements_engine.txt"
+$Sam2Requirements = Join-Path $Root "requirements_sam2.txt"
 
 function Write-Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Fail($msg) { Write-Host "ERROR: $msg" -ForegroundColor Red; exit 1 }
@@ -93,6 +108,22 @@ Write-Step "Installing engine requirements"
 & $VenvPython -m pip install -r $Requirements --disable-pip-version-check
 if ($LASTEXITCODE -ne 0) { Fail "requirements install failed" }
 
+# ---------------------------------------------------------------- optional SAM 2
+if ($WithSam2) {
+    Write-Step "Installing PyTorch ($CudaVersion) for SAM 2 - this is a large download"
+    & $VenvPython -m pip install "torch>=2.5.1" "torchvision>=0.20.1" --index-url "https://download.pytorch.org/whl/$CudaVersion" --disable-pip-version-check
+    if ($LASTEXITCODE -ne 0) { Fail "PyTorch install failed (try another -CudaVersion)" }
+    Write-Step "Installing SAM 2"
+    $env:SAM2_BUILD_CUDA = "0"   # skip the optional CUDA extension (needs a compiler)
+    try {
+        & $VenvPython -m pip install -r $Sam2Requirements --disable-pip-version-check
+        if ($LASTEXITCODE -ne 0) { Fail "SAM 2 install failed" }
+    } finally { Remove-Item Env:\SAM2_BUILD_CUDA -ErrorAction SilentlyContinue }
+    $cuda = & $VenvPython -c "import torch, sam2; print('torch %s, CUDA available: %s' % (torch.__version__, torch.cuda.is_available()))"
+    if ($LASTEXITCODE -ne 0) { Fail "SAM 2 import check failed" }
+    Write-Host "   $cuda"
+}
+
 # ---------------------------------------------------------------- verify
 Write-Step "Verifying the engine can start"
 Push-Location $Root
@@ -106,6 +137,8 @@ try {
 Write-Host ""
 Write-Host "Engine environment ready: $VenvPython" -ForegroundColor Green
 Write-Host "Next: start Maya, open the toolkit from the MayaAIToolkit shelf and click 'Start Engine'."
+if ($WithSam2) { Write-Host "Then install SAM 2.1 weights from AI Studio > Model Manager." }
+else { Write-Host "Optional: re-run with -WithSam2 to add the SAM 2.1 AI backend (GPU recommended)." }
 if ($VenvDir -ne (Join-Path $Root ".venv_engine")) {
     Write-Host "Custom venv location: set 'Engine Python' to $VenvPython in the toolkit Settings." -ForegroundColor Yellow
 }

@@ -29,5 +29,15 @@
     "default_duration_seconds": 10.0,
     "default_steps": 50,
     "max_duration_seconds": 3600.0
+  },
+  "models": {
+    "store_dir": null,
+    "catalog": null,
+    "download_timeout_seconds": 30,
+    "device": "auto"
+  },
+  "media": {
+    "proxy_max_size": 1280,
+    "proxy_quality": 85
   }
 }

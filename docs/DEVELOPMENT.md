@@ -24,6 +24,12 @@ python -m pytest -m process      # real engine subprocesses
 python -m pytest -m mock_maya    # Qt UI with the FAKE maya package (offscreen)
 ```
 
+Phase 02 engine tests need `numpy` and `opencv-python-headless` (in
+`requirements_dev.txt`); they are skipped when OpenCV is missing. They use
+synthetic plates and the built-in CPU backend; SAM 2 is not exercised by the
+automated tests (it needs multi-GB downloads and ideally a GPU). PySide2 5.15 is
+built against numpy 1.x, so use `numpy<2` in a PySide2 test environment.
+
 To mirror Maya 2024's runtime, use Python 3.10 with `PySide2==5.15.2.1`
 (the bundled Qt is 5.15.2). For Maya 2025+, use PySide6. Offscreen Qt needs
 `QT_QPA_PLATFORM=offscreen` (set automatically by `tests/mock_maya/conftest.py`).

@@ -26,6 +26,6 @@ class DepthGeometryPanel(BaseModulePanel):
                         ("Scale reference", QtWidgets.QLineEdit("1.0")), ("Textures", check("Project textures"))])
         recon.add(future_button("Reconstruct", "Phase 04"))
         depth_settings = Card("Depth Settings")
-        depth_settings.add_form([("Model", combo(["(installed in Phase 02)"])), ("Output", combo(["Relative", "Metric"])),
+        depth_settings.add_form([("Model", combo(["(depth models: later phase)"])), ("Output", combo(["Relative", "Metric"])),
                                  ("Temporal consistency", check("Stabilise over time", True))])
         layout.addLayout(grid([mesh, ground, recon, depth_settings]))

@@ -9,6 +9,7 @@ from maya_plugin.communication.contracts import make_test_job_request
 from maya_plugin.communication.engine_client import EngineApiError, EngineAuthError
 from shared.constants.engine_constants import JobState
 from shared.contracts import JobRequest
+from shared.version import TOOLKIT_VERSION
 
 
 def raw(engine, method, path, body=None, headers=None):
@@ -28,7 +29,7 @@ def test_server_bound_to_loopback_only(engine):
 
 def test_health_fields(engine):
     health = engine.client().health()
-    assert health.status == "ok" and health.api_version == "v1" and health.engine_version == "0.1.0"
+    assert health.status == "ok" and health.api_version == "v1" and health.engine_version == TOOLKIT_VERSION
     assert health.python_version and isinstance(health.gpu_available, bool)
     assert isinstance(health.cuda_available, bool) and health.active_jobs == 0
     assert "simulated" in health.job_types
@@ -61,7 +62,8 @@ def test_structured_errors(engine):
     assert status == 422 and data["error"]["code"] == "validation_error" and data["error"]["details"]["field"] == "steps"
     status, data = raw(engine, "POST", "/api/v1/jobs", body=json.dumps({"job_type": "teleport"}))
     assert status == 422 and data["error"]["code"] == "unknown_job_type"
-    assert data["error"]["details"]["available"] == ["simulated"]
+    assert "simulated" in data["error"]["details"]["available"]
+    assert {"model_install", "media_proxies", "segment_frame", "roto_track"} <= set(data["error"]["details"]["available"])
     status, data = raw(engine, "GET", "/api/v1/jobs/doesnotexist")
     assert status == 404 and data["error"]["code"] == "not_found"
     # Declared size over the limit is rejected before the body is read.

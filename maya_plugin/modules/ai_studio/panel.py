@@ -1,27 +1,41 @@
-"""AI Studio panel. Job submission is live (simulated job); model inference arrives in Phase 02."""
+"""AI Studio panel: Model Manager (Phase 02), GPU info and the engine test job."""
 from __future__ import annotations
 
 from maya_plugin.modules.base import BaseModulePanel
+from maya_plugin.ui.components.model_manager import ModelManagerWidget
 from maya_plugin.ui.components.widgets import Card, ViewerPlaceholder, accent_button, combo, grid, path_field, spin
 from maya_plugin.ui.qt import QtWidgets
 from shared.constants.engine_constants import ConnectionState
 
 
 class AIStudioPanel(BaseModulePanel):
+    phase_label = "Phase 02 - models"
+
     def build(self, layout: QtWidgets.QVBoxLayout) -> None:
+        models = Card("Model Manager")
+        note = QtWidgets.QLabel("Weights download into the engine's own model store, never into Maya's Python. "
+                                "SAM 2.1 needs the optional SAM 2 install (setup_engine.ps1 -WithSam2); "
+                                "OpenCV GrabCut is built in and runs on the CPU.")
+        note.setObjectName("Dim")
+        note.setWordWrap(True)
+        models.add(note)
+        self.model_manager = ModelManagerWidget(self.app, self.bridge)
+        models.add(self.model_manager)
+        layout.addWidget(models)
+
         inputs = Card("Inputs")
         self.image_input = path_field("Image or image sequence", "Image input",
                                       file_filter="Images (*.exr *.png *.jpg *.jpeg *.tif *.tiff *.dpx)")
         self.video_input = path_field("Video file", "Video input", file_filter="Video (*.mov *.mp4 *.avi *.mxf)")
         inputs.add_form([("Image input", self.image_input), ("Video input", self.video_input)])
-        preview = Card("Input Preview", badge="Phase 02")
+        preview = Card("Input Preview", badge="Later phase")
         preview.add(ViewerPlaceholder("Input preview\n(media decoding arrives with the video pipeline)", 160))
         layout.addLayout(grid([inputs, preview]))
 
-        model = Card("Model Selection", badge="Phase 02")
-        self.model_combo = combo(["No models installed"])
+        model = Card("Model Selection", badge="Later phase")
+        self.model_combo = combo(["Segmentation models are used in Roto Studio"])
         self.model_combo.setEnabled(False)
-        model.add_form([("Model", self.model_combo), ("Task", combo(["Segmentation", "Depth", "Pose", "Tracking"]))])
+        model.add_form([("Model", self.model_combo), ("Task", combo(["Depth", "Pose", "Tracking"]))])
         processing = Card("Processing Settings")
         processing.add_form([("Device", combo(["Auto", "CUDA (GPU)", "CPU"])),
                              ("Frame range", QtWidgets.QLineEdit("1001-1100")),
@@ -34,12 +48,12 @@ class AIStudioPanel(BaseModulePanel):
         self.gpu_text.setWordWrap(True)
         gpu.add(self.gpu_text)
         submit = Card("AI Job Submission")
-        note = QtWidgets.QLabel("Phase 01 submits a <b>simulated</b> job to verify the engine pipeline. "
-                                "No AI model runs and nothing in the Maya scene changes.")
-        note.setWordWrap(True)
+        test_note = QtWidgets.QLabel("Submits a <b>simulated</b> job to verify the engine pipeline. "
+                                     "No AI model runs and nothing in the Maya scene changes.")
+        test_note.setWordWrap(True)
         self.submit_button = accent_button("Submit Test Job")
         self.submit_button.clicked.connect(lambda: self.app.jobs.submit_test_job())
-        submit.add(note)
+        submit.add(test_note)
         submit.add(self.submit_button)
         layout.addLayout(grid([gpu, submit]))
 

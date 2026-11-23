@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from helpers import ROOT
+from shared.version import TOOLKIT_VERSION
 
 
 @pytest.fixture
@@ -23,7 +24,7 @@ def test_install_and_uninstall(installer, tmp_path, isolated_user_dir):
     installer.install(maya_dir)
     mod = maya_dir / "modules" / "MayaAIProductionToolkit.mod"
     text = mod.read_text()
-    assert text.startswith("+ MayaAIProductionToolkit 0.1.0 " + ROOT.as_posix())
+    assert text.startswith(("+ MayaAIProductionToolkit %s " % TOOLKIT_VERSION) + ROOT.as_posix())
     assert "PYTHONPATH += " + ROOT.as_posix() in text
     assert "MAYA_SHELF_PATH +:= maya_plugin/resources/shelves" in text
     assert "#" not in text.splitlines()[0]

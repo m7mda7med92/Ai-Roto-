@@ -49,6 +49,7 @@ class RightPanel(QtWidgets.QScrollArea):
         self.setWidget(container)
         self._build_static_sections()
         bridge.engine_health.connect(self.on_health)
+        bridge.models_updated.connect(self.on_models)
 
     def _build_static_sections(self) -> None:
         form = self.processing.layout()
@@ -62,13 +63,17 @@ class RightPanel(QtWidgets.QScrollArea):
         form.addRow("Batch size", self.batch_spin)
         form.addRow("Engine GPU", self.gpu_label)
         model_form = self.model.layout()
-        self.model_combo = combo(["No models installed"])
-        self.model_combo.setEnabled(False)
-        note = QtWidgets.QLabel("Model management arrives in Phase 02.")
+        self.models_label = QtWidgets.QLabel("Engine offline")
+        self.models_label.setWordWrap(True)
+        note = QtWidgets.QLabel("Install or remove models in AI Studio > Model Manager.")
         note.setObjectName("Dim")
         note.setWordWrap(True)
-        model_form.addRow("Model", self.model_combo)
+        model_form.addRow("Installed", self.models_label)
         model_form.addRow("", note)
+
+    def on_models(self, payload: Any) -> None:
+        models = [m for m in (payload or {}).get("models", []) if m.installed]
+        self.models_label.setText("\n".join(m.name for m in models) if models else "None (engine offline?)")
 
     @staticmethod
     def _clear(form_widget: QtWidgets.QWidget) -> QtWidgets.QFormLayout:
