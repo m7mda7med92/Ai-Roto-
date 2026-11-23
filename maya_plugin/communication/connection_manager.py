@@ -22,7 +22,7 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, IO, List, Optional
+from typing import Any, Dict, IO, List, Optional, Sequence
 
 from maya_plugin.communication.engine_client import EngineClient, EngineError
 from maya_plugin.core.config_manager import ConfigManager
@@ -32,7 +32,7 @@ from shared.constants.engine_constants import ENV_ENGINE_TOKEN, ConnectionState
 from shared.contracts.errors import ContractError
 from shared.contracts.job_contracts import HealthInfo
 from shared.paths import logs_dir, session_file, toolkit_root
-from shared.process_utils import pid_exists
+from shared.process_utils import kill_process_tree, pid_exists
 from shared.session import EngineSession, read_session_file, remove_session_file
 
 log = get_logger("connection")
@@ -263,12 +263,19 @@ class ConnectionManager:
                 session = read_session_file(self._session_path)
             except ContractError:
                 session = None
-            if session is not None and session.pid == process.pid and session.token == token:
+            # Match on the per-launch token only: on Windows a venv's Scripts\python.exe is a launcher
+            # that runs the real interpreter as a child, so the session file holds the child's PID.
+            if session is not None and session.token == token:
                 if self._attach(session):
                     return True
             time.sleep(0.2)
         self._message("error", "Engine did not become ready in time; terminating it")
-        self._terminate_process(process)
+        late = self._read_own_session(token)
+        self._terminate_process(process, [late.pid] if late is not None else [])
+        if late is not None:
+            remove_session_file(self._session_path, expected_pid=late.pid)
+        with self._lock:
+            self._process = None
         self._set_state(ConnectionState.OFFLINE, "Engine startup timed out. %s" % self._console_tail(), level="error")
         return False
 
@@ -325,7 +332,7 @@ class ConnectionManager:
                 process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 self._message("warning", "Engine did not exit gracefully; terminating")
-                self._terminate_process(process)
+                self._terminate_process(process, [session.pid] if session is not None else [])
         elif session is not None:
             # Not our child: the engine removes its session file as the last step of a clean shutdown.
             deadline = time.monotonic() + timeout
@@ -428,9 +435,9 @@ class ConnectionManager:
                     timeout=float(self._config.get("engine.shutdown_timeout_seconds", 10)) + 5)
             except Exception:
                 with self._lock:
-                    process = self._process
+                    process, session = self._process, self._session
                 if process is not None:
-                    self._terminate_process(process)
+                    self._terminate_process(process, [session.pid] if session is not None else [])
         self._closed = True
         self._executor.shutdown(wait=False)
         self._close_console_log()
@@ -465,19 +472,25 @@ class ConnectionManager:
             return True
         return current is not None and current.pid == pid
 
-    @staticmethod
-    def _terminate_process(process: subprocess.Popen) -> None:
+    def _read_own_session(self, token: str) -> Optional[EngineSession]:
         try:
-            process.terminate()
-            process.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                pass
-        except OSError:
-            pass
+            session = read_session_file(self._session_path)
+        except ContractError:
+            return None
+        return session if session is not None and session.token == token else None
+
+    @staticmethod
+    def _terminate_process(process: subprocess.Popen, extra_pids: Sequence[int] = ()) -> None:
+        """Stop the engine process *and its children*.
+
+        On Windows the venv launcher (Scripts\python.exe) runs the real interpreter as a child;
+        terminating only the launcher would orphan the engine. ``extra_pids`` are engine PIDs
+        known from the session file, killed too in case the launcher already exited.
+        """
+        kill_process_tree(process.pid, process)
+        for pid in extra_pids:
+            if pid and pid != process.pid and pid_exists(pid):
+                kill_process_tree(pid)
 
     def _close_console_log(self) -> None:
         handle, self._console_log = self._console_log, None

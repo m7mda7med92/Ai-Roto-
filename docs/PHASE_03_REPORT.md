@@ -51,6 +51,15 @@ a private "company" CA is refused, then accepted once that CA is trusted. The Wi
 itself (Windows CryptoAPI through truststore, PowerShell `Cert:` export) can only be checked on
 your machine.
 
+### Added during testing: Start Engine on Windows
+
+On your machine Start Engine waited 30 s and gave up: the venv's `Scripts\python.exe` is a
+launcher that starts the real interpreter as a child, so the engine's PID never matched the
+process Maya launched. Maya now recognises its engine by the per-launch token, and a timeout or
+stop kills the launcher together with its child. Two new tests launch the engine through a
+launcher that behaves the same way; both fail on the old code and pass now. You confirmed the
+token fix on Windows: connected in 1.5 s, clean stop, no orphans.
+
 ## 3. Rules kept
 
 * **No tracking in the toolkit**, per your request. The Camera Tracking module stays a UI
@@ -63,13 +72,13 @@ your machine.
 ## 4. Test results
 
 ```
-Python 3.10.20 + PySide2 5.15.2.1 (Maya 2024-like):  201 passed
-Python 3.13    + PySide6 6.8.1   (Maya 2025-like):   201 passed
+Python 3.10.20 + PySide2 5.15.2.1 (Maya 2024-like):  203 passed
+Python 3.13    + PySide6 6.8.1   (Maya 2025-like):   203 passed
 ```
 
-New in Phase 03 (20 tests): `tests/unit/test_maya_guides.py`, guide tests in
+New in Phase 03 (22 tests): `tests/unit/test_maya_guides.py`, guide tests in
 `tests/unit/test_segmentation.py` and `tests/integration/test_roto_jobs_http.py`,
-`tests/mock_maya/test_roto_guides_mock.py`, HTTPS trust tests in `tests/unit/test_model_manager.py`. The mock-Maya tests use a **fake** `maya` package.
+`tests/mock_maya/test_roto_guides_mock.py`, HTTPS trust tests in `tests/unit/test_model_manager.py`, venv-launcher tests in `tests/integration/test_connection_manager_e2e.py`. The mock-Maya tests use a **fake** `maya` package.
 
 ## 5. Known limitations
 
