@@ -13,9 +13,14 @@ class ModelFile:
     url: str
     sha256: Optional[str] = None
     size_bytes: Optional[int] = None
+    #: Phase 04: unpack this .zip into the model folder after the download is verified.
+    extract: bool = False
+    #: Phase 04: other https URLs serving the same file, tried in order when ``url`` fails.
+    mirrors: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"name": self.name, "url": self.url, "sha256": self.sha256, "size_bytes": self.size_bytes}
+        return {"name": self.name, "url": self.url, "sha256": self.sha256, "size_bytes": self.size_bytes,
+                "extract": self.extract, "mirrors": list(self.mirrors)}
 
     @classmethod
     def from_dict(cls, data: Any) -> "ModelFile":
@@ -28,8 +33,14 @@ class ModelFile:
         if sha is not None and (not isinstance(sha, str) or len(sha) != 64):
             raise ContractError("sha256 must be a 64-char hex string", "sha256")
         size = data.get("size_bytes")
+        mirrors = data.get("mirrors") or []
+        if not isinstance(mirrors, list) or not all(isinstance(m, str) for m in mirrors):
+            raise ContractError("mirrors must be a list of URLs", "mirrors")
+        extract = bool(data.get("extract", False))
+        if extract and not name.lower().endswith(".zip"):
+            raise ContractError("only .zip files can be extracted", "extract")
         return cls(name=name, url=data["url"], sha256=sha.lower() if sha else None,
-                   size_bytes=int(size) if size is not None else None)
+                   size_bytes=int(size) if size is not None else None, extract=extract, mirrors=list(mirrors))
 
 
 @dataclass

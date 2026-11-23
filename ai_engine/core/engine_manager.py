@@ -19,6 +19,7 @@ from ai_engine.core.gpu_manager import GpuManager
 from ai_engine.core.job_queue import JobQueue
 from ai_engine.core.task_manager import TaskManager, build_default_task_manager
 from ai_engine.models.model_manager import ModelManager
+from ai_engine.pose.backends import PoseBackendCache
 from ai_engine.segmentation.backends import BackendCache
 from ai_engine.server.app import EngineHTTPServer, create_server
 from ai_engine.server.routes import build_router
@@ -50,7 +51,9 @@ class EngineManager:
             catalog_path=Path(models_cfg["catalog"]) if models_cfg.get("catalog") else None,
             timeout=float(models_cfg.get("download_timeout_seconds", 30)))
         self.backends = BackendCache(self.models, device=str(models_cfg.get("device", "auto")))
-        self.tasks = task_manager or build_default_task_manager(settings, self.models, self.backends)
+        self.poses = PoseBackendCache(self.models, device=str(models_cfg.get("device", "auto")))
+        self.backends.add_evict_listener(self.poses.evict)  # re-install / removal unloads pose models too
+        self.tasks = task_manager or build_default_task_manager(settings, self.models, self.backends, self.poses)
         jobs_cfg = settings["jobs"]
         self.jobs = JobQueue(self.tasks, jobs_cfg["max_concurrent_jobs"], jobs_cfg["max_queued_jobs"],
                              jobs_cfg["history_limit"])
@@ -125,6 +128,7 @@ class EngineManager:
             self._shutdown_done = True
         self._shutdown_event.set()
         clean = self.jobs.shutdown(timeout=10.0)
+        self.poses.close_all()  # MediaPipe must be closed before interpreter exit or teardown can hang
         try:
             self.server.server_close()
         except OSError:

@@ -22,8 +22,16 @@
       "approx_size_mb": 156,
       "recommended_vram_gb": 4,
       "description": "Fastest SAM 2.1 variant. Point/box prompts and video mask propagation.",
-      "files": [{"name": "sam2.1_hiera_tiny.pt", "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt", "sha256": null}],
-      "options": {"config": "configs/sam2.1/sam2.1_hiera_t.yaml"}
+      "files": [
+        {
+          "name": "sam2.1_hiera_tiny.pt",
+          "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
+          "sha256": null
+        }
+      ],
+      "options": {
+        "config": "configs/sam2.1/sam2.1_hiera_t.yaml"
+      }
     },
     {
       "model_id": "sam2.1_hiera_small",
@@ -36,8 +44,16 @@
       "approx_size_mb": 184,
       "recommended_vram_gb": 6,
       "description": "Good speed/quality balance.",
-      "files": [{"name": "sam2.1_hiera_small.pt", "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt", "sha256": null}],
-      "options": {"config": "configs/sam2.1/sam2.1_hiera_s.yaml"}
+      "files": [
+        {
+          "name": "sam2.1_hiera_small.pt",
+          "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
+          "sha256": null
+        }
+      ],
+      "options": {
+        "config": "configs/sam2.1/sam2.1_hiera_s.yaml"
+      }
     },
     {
       "model_id": "sam2.1_hiera_base_plus",
@@ -50,8 +66,16 @@
       "approx_size_mb": 324,
       "recommended_vram_gb": 8,
       "description": "Higher quality; recommended default on 8 GB+ GPUs.",
-      "files": [{"name": "sam2.1_hiera_base_plus.pt", "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt", "sha256": null}],
-      "options": {"config": "configs/sam2.1/sam2.1_hiera_b+.yaml"}
+      "files": [
+        {
+          "name": "sam2.1_hiera_base_plus.pt",
+          "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
+          "sha256": null
+        }
+      ],
+      "options": {
+        "config": "configs/sam2.1/sam2.1_hiera_b+.yaml"
+      }
     },
     {
       "model_id": "sam2.1_hiera_large",
@@ -64,8 +88,155 @@
       "approx_size_mb": 898,
       "recommended_vram_gb": 12,
       "description": "Best quality, slowest.",
-      "files": [{"name": "sam2.1_hiera_large.pt", "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt", "sha256": null}],
-      "options": {"config": "configs/sam2.1/sam2.1_hiera_l.yaml"}
+      "files": [
+        {
+          "name": "sam2.1_hiera_large.pt",
+          "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
+          "sha256": null
+        }
+      ],
+      "options": {
+        "config": "configs/sam2.1/sam2.1_hiera_l.yaml"
+      }
+    },
+    {
+      "model_id": "rtmpose_m_halpe26",
+      "name": "RTMPose-m body + feet (26 joints)",
+      "task": "pose_2d",
+      "backend": "rtmpose",
+      "version": "1.0",
+      "license": "Apache-2.0 (OpenMMLab code and released weights). Trained on public research datasets; have your legal team confirm for commercial delivery.",
+      "homepage": "https://github.com/open-mmlab/mmpose/tree/main/projects/rtmpose",
+      "approx_size_mb": 50,
+      "recommended_vram_gb": 2,
+      "description": "Fast 2D body joints including heels and toes (Halpe26). Runs through ONNX Runtime on the GPU (CPU fallback). Recommended for rotomation.",
+      "files": [
+        {
+          "name": "rtmpose-m_simcc-body7_pt-body7-halpe26_700e-256x192-4d3e73dd_20230605.zip",
+          "url": "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/rtmpose-m_simcc-body7_pt-body7-halpe26_700e-256x192-4d3e73dd_20230605.zip",
+          "mirrors": [
+            "https://huggingface.co/Tau-J/RTMPose/resolve/main/rtmposev1/onnx_sdk/rtmpose-m_simcc-body7_pt-body7-halpe26_700e-256x192-4d3e73dd_20230605.zip"
+          ],
+          "sha256": null,
+          "extract": true
+        }
+      ],
+      "options": {
+        "input_size": [
+          192,
+          256
+        ],
+        "layout": "halpe26"
+      }
+    },
+    {
+      "model_id": "rtmpose_x_halpe26",
+      "name": "RTMPose-x body + feet (26 joints)",
+      "task": "pose_2d",
+      "backend": "rtmpose",
+      "version": "1.0",
+      "license": "Apache-2.0 (OpenMMLab code and released weights). Trained on public research datasets; have your legal team confirm for commercial delivery.",
+      "homepage": "https://github.com/open-mmlab/mmpose/tree/main/projects/rtmpose",
+      "approx_size_mb": 200,
+      "recommended_vram_gb": 4,
+      "description": "Most accurate RTMPose body + feet model (384x288 input). Slower than -m.",
+      "files": [
+        {
+          "name": "rtmpose-x_simcc-body7_pt-body7-halpe26_700e-384x288-7fb6e239_20230606.zip",
+          "url": "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/rtmpose-x_simcc-body7_pt-body7-halpe26_700e-384x288-7fb6e239_20230606.zip",
+          "mirrors": [
+            "https://huggingface.co/Tau-J/RTMPose/resolve/main/rtmposev1/onnx_sdk/rtmpose-x_simcc-body7_pt-body7-halpe26_700e-384x288-7fb6e239_20230606.zip"
+          ],
+          "sha256": null,
+          "extract": true
+        }
+      ],
+      "options": {
+        "input_size": [
+          288,
+          384
+        ],
+        "layout": "halpe26"
+      }
+    },
+    {
+      "model_id": "yolox_m_person",
+      "name": "YOLOX-m person detector",
+      "task": "person_detection",
+      "backend": "yolox",
+      "version": "1.0",
+      "license": "Apache-2.0 (YOLOX / OpenMMLab weights, trained on Human-Art + COCO research datasets); have your legal team confirm for commercial delivery.",
+      "homepage": "https://github.com/Megvii-BaseDetection/YOLOX",
+      "approx_size_mb": 100,
+      "recommended_vram_gb": 2,
+      "description": "Optional. Finds people on each frame so the 2D pose follows the right person through occlusions and fast moves. Without it the pose follows itself from your box (or your roto matte).",
+      "files": [
+        {
+          "name": "yolox_m_8xb8-300e_humanart-c2c7a14a.zip",
+          "url": "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/yolox_m_8xb8-300e_humanart-c2c7a14a.zip",
+          "mirrors": [
+            "https://huggingface.co/Tau-J/RTMPose/resolve/main/rtmposev1/onnx_sdk/yolox_m_8xb8-300e_humanart-c2c7a14a.zip"
+          ],
+          "sha256": null,
+          "extract": true
+        }
+      ],
+      "options": {
+        "input_size": [
+          640,
+          640
+        ]
+      }
+    },
+    {
+      "model_id": "mediapipe_pose_heavy",
+      "name": "MediaPipe Pose Landmarker Heavy (3D body)",
+      "task": "body_3d",
+      "backend": "mediapipe",
+      "version": "1",
+      "license": "MediaPipe code: Apache-2.0. Google's model card for BlazePose GHUM; no SMPL involved. Confirm the model terms for commercial delivery.",
+      "homepage": "https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker",
+      "approx_size_mb": 30,
+      "description": "3D body joints per frame (metric, hip centred) used as the starting pose and depth hint for the fit on your Maya camera. Also usable as a 2D model. CPU.",
+      "files": [
+        {
+          "name": "pose_landmarker_heavy.task",
+          "url": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task",
+          "sha256": "64437af838a65d18e5ba7a0d39b465540069bc8aae8308de3e318aad31fcbc7b",
+          "size_bytes": 30664242
+        }
+      ],
+      "options": {
+        "layout": "mediapipe33",
+        "also": [
+          "pose_2d"
+        ]
+      }
+    },
+    {
+      "model_id": "mediapipe_pose_full",
+      "name": "MediaPipe Pose Landmarker Full (3D body, faster)",
+      "task": "body_3d",
+      "backend": "mediapipe",
+      "version": "1",
+      "license": "MediaPipe code: Apache-2.0. Google's model card for BlazePose GHUM; no SMPL involved. Confirm the model terms for commercial delivery.",
+      "homepage": "https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker",
+      "approx_size_mb": 9,
+      "description": "Lighter version of the 3D body model.",
+      "files": [
+        {
+          "name": "pose_landmarker_full.task",
+          "url": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task",
+          "sha256": "5134a3aad27a58b93da0088d431f366da362b44e3ccfbe3462b3827a839011b1",
+          "size_bytes": 9398198
+        }
+      ],
+      "options": {
+        "layout": "mediapipe33",
+        "also": [
+          "pose_2d"
+        ]
+      }
     }
   ]
 }

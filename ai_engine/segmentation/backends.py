@@ -326,6 +326,11 @@ class BackendCache:
         self._current: Optional[Tuple[str, SegmentationBackend]] = None
         #: serialises inference so two jobs never fight over GPU memory
         self.inference_lock = threading.Lock()
+        self._evict_listeners: List[Callable[[str], None]] = []
+
+    def add_evict_listener(self, listener: Callable[[str], None]) -> None:
+        """Other model caches (Phase 04 pose models) that must also drop a model on re-install / removal."""
+        self._evict_listeners.append(listener)
 
     def get(self, model_id: str) -> SegmentationBackend:
         with self._lock:
@@ -349,12 +354,15 @@ class BackendCache:
         with self._lock:
             if self._current and self._current[0] == model_id:
                 self._current = None
+        for listener in self._evict_listeners:
+            listener(model_id)
 
     def loaded(self) -> Optional[str]:
         current = self._current
         return current[0] if current else None
 
     def capabilities(self) -> Dict[str, bool]:
+        import importlib.util
         caps = {}
         for module in ("cv2", "numpy", "torch", "sam2"):
             try:
@@ -362,4 +370,6 @@ class BackendCache:
                 caps[module] = True
             except ImportError:
                 caps[module] = False
+        for module in ("scipy", "onnxruntime", "rtmlib", "mediapipe"):  # Phase 04; found, not imported (slow)
+            caps[module] = importlib.util.find_spec(module) is not None
         return caps

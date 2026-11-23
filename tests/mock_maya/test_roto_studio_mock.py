@@ -127,13 +127,13 @@ def test_model_manager_lists_catalog(qapp, toolkit, fake_cmds):
     start_engine(qapp, main)
     main.show_module("ai_studio")
     widget = main.panel("ai_studio").model_manager
-    assert pump_until(qapp, lambda: widget.table.rowCount() == 5, 10)
-    names = [widget.table.item(r, 0).text() for r in range(5)]
+    assert pump_until(qapp, lambda: widget.table.rowCount() == 10, 10)
+    names = [widget.table.item(r, 0).text() for r in range(10)]
     assert "OpenCV GrabCut (CPU)" in names or any("GrabCut" in n for n in names)
-    builtin_row = next(r for r in range(5) if "GrabCut" in widget.table.item(r, 0).text())
+    builtin_row = next(r for r in range(10) if "GrabCut" in widget.table.item(r, 0).text())
     widget.table.selectRow(builtin_row)
     assert not widget.install_button.isEnabled() and not widget.remove_button.isEnabled()
-    sam_row = next(r for r in range(5) if "tiny" in widget.table.item(r, 0).text().lower())
+    sam_row = next(r for r in range(10) if "tiny" in widget.table.item(r, 0).text().lower())
     widget.table.selectRow(sam_row)
     assert widget.install_button.isEnabled() and not widget.remove_button.isEnabled()
     assert widget.table.item(sam_row, 4).text() == "Not installed"

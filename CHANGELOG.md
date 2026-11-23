@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0 – Phase 04: rotomation onto your rig (unreleased)
+
+### Added
+- Body Tracking → **Rotomation** panel: plate and subject box (or Roto Studio matte), AI body pose with 2D/3D overlay, rig and camera mapping with **Auto-map** and rig presets, **Fit to Your Camera**, **Bake** FK / IK / all controls, **Create Solve Locators**, FK/IK match and foot lock. Every scene change is one undo step.
+- Engine jobs `pose_track` and `roto_fit`; `ai_engine/pose/` (17-joint skeleton, RTMPose / YOLOX via rtmlib + ONNX Runtime, MediaPipe Pose Landmarker, Maya camera model, least-squares fit with the rig's bone lengths, smoothing and foot contact lock).
+- Model catalog: RTMPose-m/-x Halpe26, YOLOX-m person, MediaPipe Pose heavy/full. Model files can be zips that are extracted, and can have download mirrors.
+- `maya_bridge`: camera samples, world matrices, joint hierarchy, keyable channels, `bake_world_targets`, `create_solve_skeleton`, `key_attribute`, scene up axis and unit scale.
+- `setup_engine.ps1 -WithPose`, `requirements_pose.txt`; scipy added to the engine requirements.
+- 24 new tests (225 total), manual checklist section I, Phase 04 report with a model license table.
+
+### Changed
+- Version 0.4.0. Body Tracking module is functional.
+
+
 ## 0.3.0 – Phase 03: roto guided by Maya tracking (unreleased)
 
 ### Added

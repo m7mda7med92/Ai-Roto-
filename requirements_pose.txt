@@ -1,0 +1,10 @@
+# Optional: body pose models for rotomation (Phase 04).
+# Install with:  scripts\setup_engine.ps1 -WithPose
+#
+# ONNX Runtime with the CUDA 12 + cuDNN 9 runtime from pip (no separate CUDA install needed).
+# The setup script installs rtmlib (RTMPose / YOLOX pre/post-processing) with --no-deps afterwards,
+# because rtmlib depends on the CPU-only "onnxruntime" package, which would hide the GPU build.
+onnxruntime-gpu[cuda,cudnn]>=1.21,<2
+tqdm>=4.60
+# MediaPipe Pose Landmarker (3D body joints, CPU).
+mediapipe>=0.10.14

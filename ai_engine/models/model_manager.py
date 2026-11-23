@@ -70,6 +70,36 @@ def https_context() -> ssl.SSLContext:
     return context
 
 
+def extracted_dir(zip_name: str) -> str:
+    """Folder an extracted archive goes to, next to it: ``rtmpose.zip`` -> ``rtmpose``."""
+    return zip_name[:-4] if zip_name.lower().endswith(".zip") else zip_name + ".d"
+
+
+def extract_zip(archive: Path, target: Path) -> None:
+    """Unpack a downloaded archive, refusing absolute paths and ``..`` (zip-slip)."""
+    import zipfile
+    if target.exists():
+        shutil.rmtree(str(target))
+    target.mkdir(parents=True)
+    root = target.resolve()
+    try:
+        with zipfile.ZipFile(str(archive)) as zf:
+            for member in zf.infolist():
+                destination = (root / member.filename).resolve()
+                if destination != root and root not in destination.parents:
+                    raise ModelError("unsafe path in archive %s: %s" % (archive.name, member.filename))
+            zf.extractall(str(root))
+    except zipfile.BadZipFile as exc:
+        shutil.rmtree(str(target), ignore_errors=True)
+        raise ModelError("%s is not a valid zip file: %s" % (archive.name, exc))
+
+
+def find_file(folder: Path, suffix: str) -> Optional[Path]:
+    """First file under ``folder`` (recursively, sorted) whose name ends with ``suffix``."""
+    matches = sorted(p for p in Path(folder).rglob("*" + suffix) if p.is_file())
+    return matches[0] if matches else None
+
+
 class UnknownModel(ModelError, KeyError):
     pass
 
@@ -102,7 +132,8 @@ def load_catalog(path: Optional[Path] = None) -> Dict[str, ModelInfo]:
         if info.model_id in catalog:
             raise ModelError("duplicate model_id in catalog: %s" % info.model_id)
         for model_file in info.files:
-            _check_url(model_file.url)
+            for url in [model_file.url] + model_file.mirrors:
+                _check_url(url)
         catalog[info.model_id] = info
     return catalog
 
@@ -171,8 +202,8 @@ class ModelManager:
             for index, model_file in enumerate(info.files):
                 def file_report(fraction: float, message: str, _i: int = index) -> None:
                     report((_i + fraction) / total_files, message)
-                digest = self._download(model_file.url, folder / model_file.name, model_file.size_bytes,
-                                        file_report, checkpoint)
+                digest = self._download_any([model_file.url] + model_file.mirrors, folder / model_file.name,
+                                            model_file.size_bytes, file_report, checkpoint)
                 if model_file.sha256:
                     if digest != model_file.sha256:
                         (folder / model_file.name).unlink(missing_ok=True)
@@ -180,6 +211,9 @@ class ModelManager:
                 else:
                     verified = False
                 hashes[model_file.name] = digest
+                if model_file.extract:
+                    report((index + 0.999) / total_files, "Unpacking %s" % model_file.name)
+                    extract_zip(folder / model_file.name, folder / extracted_dir(model_file.name))
             (folder / MARKER).write_text(json.dumps({
                 "model_id": model_id, "installed_at": time.time(), "sha256": hashes, "verified": verified,
             }, indent=2), encoding="utf-8")
@@ -219,6 +253,18 @@ class ModelManager:
     def _release(self, model_id: str) -> None:
         with self._lock:
             self._busy.discard(model_id)
+
+    def _download_any(self, urls: List[str], target: Path, expected_size: Optional[int],
+                      report: Callable[[float, str], None], checkpoint: Callable[[], None]) -> str:
+        """Try ``urls`` in order (official host first, then mirrors). Cancellation is never retried."""
+        errors = []
+        for url in urls:
+            try:
+                return self._download(url, target, expected_size, report, checkpoint)
+            except ModelError as exc:
+                errors.append(str(exc))
+                log.warning("Download failed, trying next source", extra={"url": url, "error": str(exc)})
+        raise ModelError(" | ".join(errors) if errors else "no download URL")
 
     def _download(self, url: str, target: Path, expected_size: Optional[int],
                   report: Callable[[float, str], None], checkpoint: Callable[[], None]) -> str:

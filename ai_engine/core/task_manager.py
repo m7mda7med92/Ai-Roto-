@@ -41,7 +41,7 @@ class TaskManager:
 
 
 def build_default_task_manager(settings: Optional[Dict[str, Any]] = None, model_manager: Any = None,
-                               backend_cache: Any = None) -> TaskManager:
+                               backend_cache: Any = None, pose_cache: Any = None) -> TaskManager:
     """Register the processors available in this phase.
 
     The AI processors need the engine's model store and backend cache; without them
@@ -61,4 +61,8 @@ def build_default_task_manager(settings: Optional[Dict[str, Any]] = None, model_
         manager.register(MediaProxiesProcessor(media))
         manager.register(SegmentFrameProcessor(model_manager, backend_cache, media))
         manager.register(RotoTrackProcessor(model_manager, backend_cache, media))
+    if model_manager is not None and pose_cache is not None:
+        from ai_engine.processors.pose_processors import PoseTrackProcessor, RotoFitProcessor
+        manager.register(PoseTrackProcessor(model_manager, pose_cache))
+        manager.register(RotoFitProcessor())
     return manager

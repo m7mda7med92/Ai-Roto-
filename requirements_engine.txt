@@ -10,3 +10,6 @@ truststore>=0.9,<1
 # Optional SAM 2 support lives in requirements_sam2.txt and is installed with
 #   scripts/setup_engine.ps1 -WithSam2 [-CudaVersion cu124]
 # because PyTorch must come from the index matching your NVIDIA driver.
+#
+# Phase 04 (rotomation): the fit on the Maya camera uses SciPy's least-squares solver.
+scipy>=1.10,<2
