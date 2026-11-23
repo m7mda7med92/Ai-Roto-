@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mait/v1/job_status.schema.json",
+  "title": "JobStatus",
+  "description": "Job status returned by GET /api/v1/jobs/{job_id}. Mirrors shared.contracts.JobStatus.",
+  "type": "object",
+  "required": ["job_id", "job_type", "state", "progress"],
+  "properties": {
+    "job_id": {"type": "string"},
+    "job_type": {"type": "string"},
+    "label": {"type": "string"},
+    "state": {"enum": ["queued", "running", "paused", "cancelling", "cancelled", "completed", "failed"]},
+    "progress": {"type": "number", "minimum": 0, "maximum": 1},
+    "message": {"type": "string"},
+    "created_at": {"type": "number"},
+    "started_at": {"type": ["number", "null"]},
+    "finished_at": {"type": ["number", "null"]},
+    "cancel_requested": {"type": "boolean"},
+    "result": {"type": ["object", "null"]},
+    "error": {"oneOf": [{"type": "null"}, {"$ref": "error.schema.json"}]}
+  }
+}

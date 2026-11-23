@@ -1,0 +1,1 @@
+"""FAKE maya.api package."""

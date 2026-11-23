@@ -1,0 +1,31 @@
+// Maya AI Production Toolkit shelf.
+// Loaded through MAYA_SHELF_PATH (set by MayaAIProductionToolkit.mod). It is a
+// separate shelf tab, so no existing shelf is modified.
+global proc shelf_MayaAIToolkit () {
+    global string $gBuffStr;
+    global string $gBuffStr0;
+    global string $gBuffStr1;
+
+    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 35
+        -height 35
+        -manage 1
+        -visible 1
+        -preventOverride 0
+        -annotation "Open the Maya AI Production Toolkit"
+        -enableBackground 0
+        -label "AI Toolkit"
+        -imageOverlayLabel ""
+        -image "mayaAIToolkit.png"
+        -image1 "mayaAIToolkit.png"
+        -style "iconOnly"
+        -marginWidth 1
+        -marginHeight 1
+        -sourceType "python"
+        -command "import maya_plugin.launcher as _mait_launcher\n_mait_launcher.show()"
+        -commandRepeatable 1
+        -flat 1
+    ;
+}
