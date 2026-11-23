@@ -27,9 +27,9 @@ class MayaStudioPanel(BaseModulePanel):
 
         cards = []
         for title, button, phase, rows in (
-            ("Camera Import", "Import Solved Camera", "Phase 03", [("Scale", combo(["1 unit = 1 cm", "1 unit = 1 m"]))]),
+            ("Camera Import", "Import Solved Camera", "Later", [("Scale", combo(["1 unit = 1 cm", "1 unit = 1 m"]))]),
             ("Geometry Import", "Import Geometry", "Phase 04", [("Format", combo(["OBJ", "Alembic", "USD"]))]),
-            ("Animation Import", "Import Animation", "Phase 03", [("Keys", combo(["Bake every frame", "Reduce keys"]))]),
+            ("Animation Import", "Import Animation", "Later", [("Keys", combo(["Bake every frame", "Reduce keys"]))]),
             ("Skeleton Import", "Import Skeleton", "Phase 05", [("Rig", combo(["HumanIK", "Joints only"]))]),
             ("Rotomation", "Start Rotomation", "Phase 06", [("Solve", check("Use body tracking as guide", True))]),
             ("FK / IK", "Match FK/IK", "Phase 06", [("Direction", combo(["FK to IK", "IK to FK"]))]),

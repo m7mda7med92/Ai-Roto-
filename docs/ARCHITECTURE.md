@@ -205,6 +205,42 @@ AI Studio: Model Manager  --GET/DELETE /models, job model_install-->  ModelManag
   positions through the fitted image rectangle, so proxy size never changes prompt
   positions.
 
+## Roto guided by Maya tracking (Phase 03)
+
+The toolkit does **not** track cameras or objects. The artist tracks the shot in Maya, and Roto
+Studio uses that tracking to steer the AI mask.
+
+```
+Maya scene (query only)                   Maya plugin (pure Python)                 Engine
+ tracked camera  --getAttr(time=f)-->  maya_guides.build_guides():          roto_track(guides=...)
+ locators / geo  --getAttr / xform-->   project into plate pixels per frame  -> backend.track(..., guides)
+                                         (include points, exclude points,       SAM 2: extra prompts on those frames
+                                          box around projected vertices)       classical: re-anchor / restart per frame
+```
+
+* **Reading (`maya_bridge.read_guide_scene`).** For each plate frame (+ an optional Maya frame
+  offset) it reads the camera's `worldMatrix[0]` and `focalLength` with `getAttr(..., time=f)`,
+  the camera's film aperture / fit / offset / lens squeeze once, each guide object's
+  `worldMatrix[0]` per frame and, for meshes, up to 400 object-space vertices once
+  (`xform(query=True)`). Only query commands are used, so the current time, the selection and
+  the scene stay untouched (asserted by `tests/mock_maya/test_roto_guides_mock.py`).
+* **Projection (`modules/roto_studio/maya_guides.py`).** Maya's camera model: camera looks down
+  -Z, image-plane mm = focal * x / -z minus film offset, then the film fit (fill / horizontal /
+  vertical / overscan) against the plate aspect maps mm to pixels. Not modelled: pre/post scale,
+  film roll, pan/zoom, lens distortion and deformation of skinned meshes (only the transform's
+  animation moves the sampled vertices).
+* **Guides.** Include locators become include points, exclude locators exclude points, include
+  meshes a box around their projected vertices, exclude meshes an exclude point at their projected
+  centre. Off-screen points are dropped; frames with nothing of the subject on screen get no guide.
+* **Engine (`roto_track`).** New optional params `guides` (`{"<frame>": {"points", "box"}}`),
+  `guide_interval` (use every N-th guide, counted from the prompt frame) and `guide_source`
+  (a label stored in the manifest). Without manual `prompts`, the guide on the prompt frame is the
+  starting prompt. SAM 2 adds the guides as extra conditioning prompts on their frames of the same
+  object; the classical backend constrains GrabCut with the guide (outside the padded box is
+  background, guide points are hard foreground/background) and restarts from the guide when the
+  propagated mask has left it. Every guided frame gets `guide_points_inside`, `guide_box_iou` and a
+  `drift` flag in the manifest; the result lists `drift_frames` for the artist to check.
+
 ## Extending (later phases)
 
 1. Add a processor in `ai_engine/processors/` (subclass `BaseProcessor`, set

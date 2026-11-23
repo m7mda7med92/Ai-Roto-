@@ -16,10 +16,85 @@ QUERY_ONLY_COMMANDS = {"about", "ls", "objExists", "nodeType", "listRelatives", 
 
 _workspace_controls: set = set()
 
+#: Fake scene for query tests: long transform name -> {"kind": "camera"|"locator"|"mesh",
+#: "matrix": callable(frame) -> 16 floats, "attrs": {shape attr: value or callable(frame)},
+#: "vertices": [(x, y, z), ...]}. Shapes are named "<transform>|<short>Shape".
+SCENE: Dict[str, Dict[str, Any]] = {}
+SELECTION: List[str] = []
+_DEFAULT_CAMERAS = ("persp", "top", "front", "side")
+
 
 def reset() -> None:
     CALLS.clear()
     _workspace_controls.clear()
+    SCENE.clear()
+    SELECTION.clear()
+
+
+def add_node(transform: str, kind: str, matrix: Any, attrs: Any = None, vertices: Any = None) -> str:
+    """Register a fake node (test helper, not a Maya command)."""
+    SCENE[transform] = {"kind": kind, "matrix": matrix, "attrs": dict(attrs or {}), "vertices": list(vertices or [])}
+    return transform
+
+
+def _shape(transform: str) -> str:
+    return "%s|%sShape" % (transform, transform.split("|")[-1])
+
+
+def _split(name: str) -> Any:
+    """``node.attr`` -> (transform, is_shape, attr)."""
+    node, _, attr = name.partition(".")
+    for transform in SCENE:
+        if node == transform:
+            return transform, False, attr
+        if node == _shape(transform):
+            return transform, True, attr
+    return None, False, attr
+
+
+def objExists(name: str) -> bool:  # noqa: N802
+    CALLS.append(("objExists", (name,), {}))
+    return _split(name)[0] is not None
+
+
+def listRelatives(node: str, **kwargs: Any) -> Any:  # noqa: N802
+    CALLS.append(("listRelatives", (node,), kwargs))
+    if kwargs.get("parent"):
+        if "|" in node.strip("|"):
+            return [node.rsplit("|", 1)[0]]
+        short = node.replace("Shape", "")
+        return ["|" + short] if short in _DEFAULT_CAMERAS else None
+    if kwargs.get("shapes"):
+        transform, _is_shape, _attr = _split(node)
+        if transform is None:
+            return None
+        wanted = kwargs.get("type")
+        kind = SCENE[transform]["kind"]
+        if wanted and wanted != kind:
+            return None
+        return [_shape(transform)]
+    return None
+
+
+def getAttr(name: str, **kwargs: Any) -> Any:  # noqa: N802
+    CALLS.append(("getAttr", (name,), kwargs))
+    transform, _is_shape, attr = _split(name)
+    if transform is None:
+        raise ValueError("No object matches name: %s" % name)
+    node = SCENE[transform]
+    frame = kwargs.get("time", 1.0)
+    if attr == "worldMatrix[0]":
+        return list(node["matrix"](frame))
+    value = node["attrs"][attr]
+    return value(frame) if callable(value) else value
+
+
+def xform(name: str, **kwargs: Any) -> Any:
+    CALLS.append(("xform", (name,), kwargs))
+    if _is_query(kwargs) and name.endswith(".vtx[*]"):
+        transform, _is_shape, _attr = _split(name.split(".")[0])
+        return [c for v in SCENE[transform]["vertices"] for c in v]
+    return None
 
 
 def _is_query(kwargs: Dict[str, Any]) -> bool:
@@ -74,8 +149,13 @@ def file(*args: Any, **kwargs: Any) -> Any:
 
 def ls(*args: Any, **kwargs: Any) -> List[str]:
     CALLS.append(("ls", args, kwargs))
+    if kwargs.get("selection"):
+        return list(SELECTION)
     if kwargs.get("type") == "camera":
-        return ["perspShape", "topShape", "frontShape", "sideShape"]
+        extra = [_shape(t) for t, n in SCENE.items() if n["kind"] == "camera"]
+        if kwargs.get("long"):
+            return ["|%s|%sShape" % (c, c) for c in _DEFAULT_CAMERAS] + extra
+        return ["%sShape" % c for c in _DEFAULT_CAMERAS] + [e.split("|")[-1] for e in extra]
     return []
 
 

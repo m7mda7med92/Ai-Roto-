@@ -123,6 +123,12 @@ def test_track_can_be_cancelled(engine, tmp_path):
     ("roto_track", {"source": "PLATE", "model_id": "opencv_grabcut", "prompt_frame": 1001, "prompts": PROMPTS,
                     "output_dir": "/tmp/o", "name": "../evil"}, "name"),
     ("model_install", {"model_id": "opencv_grabcut"}, "model_id"),
+    ("roto_track", {"source": "PLATE", "model_id": "opencv_grabcut", "prompt_frame": 1001, "prompts": PROMPTS,
+                    "output_dir": "/tmp/o", "guides": {"abc": {"points": [[1, 1, 1]]}}}, "guides"),
+    ("roto_track", {"source": "PLATE", "model_id": "opencv_grabcut", "prompt_frame": 1001,
+                    "output_dir": "/tmp/o", "guides": {"1002": {"points": [[1, 1, 1]]}}}, "prompts"),
+    ("roto_track", {"source": "PLATE", "model_id": "opencv_grabcut", "prompt_frame": 1001, "prompts": PROMPTS,
+                    "output_dir": "/tmp/o", "guide_interval": 0}, "guide_interval"),
 ])
 def test_validation_errors(engine, tmp_path, job_type, params, field):
     pattern, _ = synthetic_plate(tmp_path / "plate", count=2)
@@ -130,3 +136,34 @@ def test_validation_errors(engine, tmp_path, job_type, params, field):
     with pytest.raises(EngineApiError) as err:
         submit(engine.client(), job_type, params)
     assert err.value.status == 422 and err.value.details.get("field") == field
+
+
+def test_maya_guided_track_without_clicks(engine, tmp_path):
+    """Phase 03: guides projected from Maya tracking drive the whole track (no manual prompts)."""
+    from helpers import jump_guides, jump_plate
+    client = engine.client()
+    pattern, truth = jump_plate(tmp_path / "plate")
+    guides = jump_guides()
+    guides["1004"]["points"].append([2000, 90, 1])  # off-frame points are dropped, not an error
+    out = tmp_path / "roto" / "guided"
+    status = wait_job(client, submit(client, "roto_track", {
+        "source": pattern, "model_id": "opencv_grabcut", "prompt_frame": 1001, "direction": "forward",
+        "output_dir": str(out), "name": "guided", "guides": guides, "guide_interval": 1,
+        "guide_source": "maya camera cam1"}).job_id)
+    assert status.state == JobState.COMPLETED, status.error
+    assert status.result["guided_frames"] == 6 and status.result["drift_frames"] == []
+    for frame, mask in truth.items():
+        assert iou(cv2.imread(str(out / ("guided.%04d.png" % frame)), cv2.IMREAD_UNCHANGED) > 127, mask) > 0.85
+    manifest = json.loads((out / "guided.roto.json").read_text())
+    assert manifest["guides"] == {"source": "maya camera cam1", "frames": 6, "used": 6, "interval": 1}
+    assert manifest["frames"]["1004"]["guide_points_inside"] == 1.0
+    assert manifest["frames"]["1004"]["guide_box_iou"] > 0.8 and not manifest["frames"]["1004"]["drift"]
+
+    # Guides every 2nd frame are still used for the drift report on every guided frame.
+    status = wait_job(client, submit(client, "roto_track", {
+        "source": pattern, "model_id": "opencv_grabcut", "prompt_frame": 1001, "direction": "forward",
+        "output_dir": str(out), "name": "sparse", "guides": guides, "guide_interval": 2}).job_id)
+    assert status.state == JobState.COMPLETED, status.error
+    assert status.result["guided_frames"] == 3
+    manifest = json.loads((out / "sparse.roto.json").read_text())
+    assert manifest["guides"]["used"] == 3 and all("drift" in manifest["frames"][str(f)] for f in truth)

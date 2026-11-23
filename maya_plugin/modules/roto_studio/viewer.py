@@ -18,6 +18,7 @@ INCLUDE_COLOR = QtGui.QColor(80, 220, 120)
 EXCLUDE_COLOR = QtGui.QColor(240, 80, 80)
 BOX_COLOR = QtGui.QColor(255, 200, 60)
 MASK_COLOR = QtGui.QColor(70, 160, 255)
+GUIDE_COLOR = QtGui.QColor(60, 230, 230)
 
 
 def _event_pos(event: QtGui.QMouseEvent) -> QtCore.QPointF:
@@ -61,6 +62,8 @@ class RotoViewer(QtWidgets.QWidget):
         self._box: Optional[Tuple[float, float, float, float]] = None
         self._drag_start: Optional[QtCore.QPointF] = None
         self._drag_now: Optional[QtCore.QPointF] = None
+        self._guide_points: List[Tuple[float, float, int]] = []
+        self._guide_box: Optional[Tuple[float, float, float, float]] = None
         self._message = "Load a plate to start"
         self.mode = "points"
         self.show_mask = True
@@ -82,6 +85,16 @@ class RotoViewer(QtWidgets.QWidget):
                     box: Optional[Tuple[float, float, float, float]]) -> None:
         self._points, self._box = list(points), box
         self.update()
+
+    def set_guide(self, points: List[Tuple[float, float, int]],
+                  box: Optional[Tuple[float, float, float, float]]) -> None:
+        """Maya-tracking guide for the shown frame (drawn in cyan, not editable)."""
+        self._guide_points = [tuple(p) for p in points]  # type: ignore[misc]
+        self._guide_box = tuple(box) if box else None  # type: ignore[assignment]
+        self.update()
+
+    def has_guide(self) -> bool:
+        return bool(self._guide_points) or self._guide_box is not None
 
     def set_message(self, text: str) -> None:
         self._message = text
@@ -132,6 +145,17 @@ class RotoViewer(QtWidgets.QWidget):
         painter.drawImage(rect, self._image)
         if self._overlay is not None and self.show_mask:
             painter.drawImage(rect, self._overlay)
+        if self._guide_box is not None:
+            painter.setPen(QtGui.QPen(GUIDE_COLOR, 1.5, QtCore.Qt.DotLine))
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawRect(QtCore.QRectF(self.to_widget(self._guide_box[0], self._guide_box[1]),
+                                           self.to_widget(self._guide_box[2], self._guide_box[3])).normalized())
+        for x, y, label in self._guide_points:
+            center = self.to_widget(x, y)
+            painter.setPen(QtGui.QPen(GUIDE_COLOR if label == 1 else EXCLUDE_COLOR, 2))
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawLine(center + QtCore.QPointF(-6, 0), center + QtCore.QPointF(6, 0))
+            painter.drawLine(center + QtCore.QPointF(0, -6), center + QtCore.QPointF(0, 6))
         if self._box is not None:
             self._draw_box(painter, self.to_widget(self._box[0], self._box[1]),
                            self.to_widget(self._box[2], self._box[3]))

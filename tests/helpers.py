@@ -139,3 +139,29 @@ class FileServer:
     def __exit__(self, *exc: object) -> None:
         self.server.shutdown()
         self.server.server_close()
+
+
+# ------------------------------------------------------------------ Phase 03 (Maya-guided roto)
+JUMP_WIDTH, JUMP_HEIGHT, JUMP_STEP = 480, 180, 45
+
+
+def jump_center(index: int):
+    """Disc centre in the fast-moving plate (too fast for optical flow alone)."""
+    return JUMP_WIDTH // 3 + index * JUMP_STEP, JUMP_HEIGHT // 2
+
+
+def jump_plate(folder: Path, count: int = 6):
+    """Red disc jumping 45 px per frame: unguided tracking loses it, Maya guides recover it."""
+    return synthetic_plate(folder, count=count, width=JUMP_WIDTH, height=JUMP_HEIGHT, step=JUMP_STEP)
+
+
+def jump_guides(count: int = 6, first: int = 1001, points: bool = True, box: bool = True) -> dict:
+    """What projected Maya tracking would give for :func:`jump_plate` (string frame keys)."""
+    radius = max(8, JUMP_HEIGHT // 6)
+    out = {}
+    for index in range(count):
+        x, y = jump_center(index)
+        out[str(first + index)] = {"points": [[x, y, 1]] if points else [],
+                                   "box": [x - radius - 3, y - radius - 3, x + radius + 3, y + radius + 3]
+                                   if box else None}
+    return out

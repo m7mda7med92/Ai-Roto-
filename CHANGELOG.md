@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 – Phase 03: roto guided by Maya tracking (unreleased)
+
+### Added
+- Roto Studio **Guide from Maya Tracking**: pick the tracked camera, include/exclude locators or geometry, Maya frame offset, guide interval; **Read Tracking from Maya** (query-only), guide overlay in the viewer, **Use Guide as Prompt**, tracking without clicks.
+- `maya_bridge.list_cameras`, `selected_transforms`, `read_guide_scene` (query-only `getAttr -time`, `xform -query`).
+- `modules/roto_studio/maya_guides.py`: Maya camera projection (film fit, film offset, lens squeeze) and per-frame guide prompts.
+- `roto_track` params `guides`, `guide_interval`, `guide_source`; SAM 2 uses guides as extra per-frame prompts, the classical backend re-anchors on them; manifest/result report guide agreement and `drift_frames`.
+- 17 new tests (198 total), manual checklist section H, Phase 03 report.
+
+### Changed
+- Version 0.3.0. Camera Tracking placeholders are labelled "Later" (the toolkit does not track; use Maya tracking).
+
+
 ## 0.2.0 – Phase 02: AI Roto (unreleased)
 
 ### Added
