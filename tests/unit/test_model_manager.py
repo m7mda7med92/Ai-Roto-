@@ -141,3 +141,46 @@ def test_model_folder_cannot_escape_store(tmp_path):
     manager = ModelManager(tmp_path / "store", write_catalog(tmp_path, "https://example.com/toy.pt"))
     with pytest.raises(ModelError):
         manager._folder("../outside")
+
+
+# ------------------------------------------------------------------ SSL-inspecting networks (Phase 03)
+def test_https_context_prefers_system_trust_store(monkeypatch):
+    import sys
+
+    from ai_engine.models import model_manager as mm
+    truststore = pytest.importorskip("truststore")
+    monkeypatch.delenv(mm.CA_BUNDLE_ENV, raising=False)
+    assert isinstance(mm.https_context(), truststore.SSLContext)
+    monkeypatch.setitem(sys.modules, "truststore", None)  # not installed -> Python defaults, still verifying
+    import ssl
+    context = mm.https_context()
+    assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
+
+
+def test_bad_ca_bundle_is_reported(monkeypatch, tmp_path):
+    from ai_engine.models import model_manager as mm
+    monkeypatch.setenv(mm.CA_BUNDLE_ENV, str(tmp_path / "missing.pem"))
+    with pytest.raises(ModelError, match="MAIT_CA_BUNDLE"):
+        mm.https_context()
+
+
+def test_https_download_through_company_ca(monkeypatch, tmp_path):
+    """A server signed by a private CA (as with SSL inspection) fails until that CA is trusted."""
+    from ai_engine.models import model_manager as mm
+    from helpers import make_private_ca
+    made = make_private_ca(tmp_path / "pki")
+    if made is None:
+        pytest.skip("openssl CLI not available")
+    ca_pem, cert, key = made
+    monkeypatch.delenv(mm.CA_BUNDLE_ENV, raising=False)
+    with FileServer({"toy.pt": WEIGHTS}, tls=(str(cert), str(key))) as server:
+        url = server.url("toy.pt")
+        assert url.startswith("https://")
+        sha = hashlib.sha256(WEIGHTS).hexdigest()
+        manager = ModelManager(tmp_path / "store", write_catalog(tmp_path, url, sha, len(WEIGHTS)))
+        with pytest.raises(ModelError, match="not trusted"):  # verification is never switched off
+            manager.install("toy_model", lambda p, m: None, no_cancel)
+        assert manager.get("toy_model").installed is False
+        monkeypatch.setenv(mm.CA_BUNDLE_ENV, str(ca_pem))
+        info = manager.install("toy_model", lambda p, m: None, no_cancel)
+    assert info.installed and info.verified

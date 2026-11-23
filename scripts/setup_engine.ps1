@@ -27,6 +27,11 @@
     PyTorch wheel flavour used with -WithSam2: cu118, cu121, cu124 (default) or cpu.
     Pick one supported by your NVIDIA driver (see "nvidia-smi", top right "CUDA Version").
 
+.PARAMETER CaBundle
+    Optional PEM file with your company's root CA (networks that inspect SSL). Usually not
+    needed: if pip cannot verify certificates, the script automatically retries with the
+    Windows certificate store (Root + intermediate CA stores) combined with pip's own list.
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File scripts\setup_engine.ps1
 .EXAMPLE
@@ -41,7 +46,8 @@ param(
     [switch]$Force,
     [switch]$WithSam2,
     [ValidateSet("cu118", "cu121", "cu124", "cpu")]
-    [string]$CudaVersion = "cu124"
+    [string]$CudaVersion = "cu124",
+    [string]$CaBundle = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -65,6 +71,44 @@ function Get-PythonVersion([string[]]$cmd) {
         if ($LASTEXITCODE -eq 0 -and $out) { return $out.Trim() }
     } catch { }
     return $null
+}
+
+function ConvertTo-Pem($cert) {
+    $b64 = [Convert]::ToBase64String($cert.RawData)
+    $lines = for ($i = 0; $i -lt $b64.Length; $i += 64) { $b64.Substring($i, [Math]::Min(64, $b64.Length - $i)) }
+    return "-----BEGIN CERTIFICATE-----`n" + ($lines -join "`n") + "`n-----END CERTIFICATE-----`n"
+}
+
+# Networks with SSL inspection re-sign HTTPS with a company CA that IT installs in the Windows
+# certificate store. pip uses its own CA list, so it fails there. This builds a PEM bundle with
+# pip's list + the Windows Root and intermediate CA stores (+ -CaBundle) and points pip at it.
+# Verification stays on; nothing is written outside the venv folder.
+function Enable-WindowsCertificates([string]$python) {
+    $bundle = Join-Path $VenvDir "windows_ca_bundle.pem"
+    $parts = New-Object System.Collections.Generic.List[string]
+    try {
+        $certifi = & $python -c "import pip._vendor.certifi as c; print(c.where())" 2>$null
+        if ($LASTEXITCODE -eq 0 -and $certifi -and (Test-Path $certifi.Trim())) {
+            $parts.Add([IO.File]::ReadAllText($certifi.Trim()))
+        }
+    } catch { }
+    $seen = @{}
+    foreach ($store in @("Cert:\CurrentUser\Root", "Cert:\LocalMachine\Root", "Cert:\CurrentUser\CA",
+                         "Cert:\LocalMachine\CA", "Cert:\LocalMachine\AuthRoot")) {
+        foreach ($cert in (Get-ChildItem $store -ErrorAction SilentlyContinue)) {
+            if (-not $seen.ContainsKey($cert.Thumbprint)) {
+                $seen[$cert.Thumbprint] = $true
+                $parts.Add((ConvertTo-Pem $cert))
+            }
+        }
+    }
+    if ($CaBundle) {
+        if (-not (Test-Path $CaBundle)) { Fail "-CaBundle file not found: $CaBundle" }
+        $parts.Add([IO.File]::ReadAllText($CaBundle))
+    }
+    [IO.File]::WriteAllText($bundle, ($parts -join "`n"), [Text.Encoding]::ASCII)
+    $env:PIP_CERT = $bundle
+    Write-Host "   using $($seen.Count) certificate(s) from the Windows store: $bundle"
 }
 
 # ---------------------------------------------------------------- locate Python
@@ -100,9 +144,15 @@ if (-not (Test-Path $VenvDir)) {
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 if (-not (Test-Path $VenvPython)) { Fail "venv python not found at $VenvPython" }
 
+if ($CaBundle) { Enable-WindowsCertificates $VenvPython }
 Write-Step "Upgrading pip"
 & $VenvPython -m pip install --upgrade pip --disable-pip-version-check
-if ($LASTEXITCODE -ne 0) { Fail "pip upgrade failed" }
+if ($LASTEXITCODE -ne 0 -and -not $env:PIP_CERT) {
+    Write-Host "   pip could not download. Retrying with the Windows certificate store (SSL-inspecting networks)." -ForegroundColor Yellow
+    Enable-WindowsCertificates $VenvPython
+    & $VenvPython -m pip install --upgrade pip --disable-pip-version-check
+}
+if ($LASTEXITCODE -ne 0) { Fail "pip upgrade failed (network or certificate problem; see the pip error above)" }
 
 Write-Step "Installing engine requirements"
 & $VenvPython -m pip install -r $Requirements --disable-pip-version-check
@@ -133,6 +183,8 @@ try {
     if ($LASTEXITCODE -ne 0) { Fail "engine self-check failed" }
     Write-Host "   engine version $ver"
 } finally { Pop-Location; Remove-Item Env:\PYTHONPATH -ErrorAction SilentlyContinue }
+
+Remove-Item Env:\PIP_CERT -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "Engine environment ready: $VenvPython" -ForegroundColor Green

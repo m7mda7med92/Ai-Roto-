@@ -41,6 +41,16 @@ Details: [ARCHITECTURE.md § Roto guided by Maya tracking](ARCHITECTURE.md#roto-
 | `roto_track` API: guides, guide_interval, guide_source, drift report, validation | Over real HTTP | – |
 | Scene safety | Mock test asserts no scene-modifying command and no `currentTime` change during the whole guided workflow | Real Maya (H9) |
 
+### Added during testing: networks that inspect SSL
+
+Your first install showed that pip and the Model Manager could not download through a company
+network that re-signs HTTPS. Now the Model Manager trusts the Windows certificate store
+(`truststore`), and `setup_engine.ps1` retries pip with the Windows certificate stores
+(or `-CaBundle <file>`). Certificate checks stay on. A test proves it: a local HTTPS server signed by
+a private "company" CA is refused, then accepted once that CA is trusted. The Windows store path
+itself (Windows CryptoAPI through truststore, PowerShell `Cert:` export) can only be checked on
+your machine.
+
 ## 3. Rules kept
 
 * **No tracking in the toolkit**, per your request. The Camera Tracking module stays a UI
@@ -53,13 +63,13 @@ Details: [ARCHITECTURE.md § Roto guided by Maya tracking](ARCHITECTURE.md#roto-
 ## 4. Test results
 
 ```
-Python 3.10.20 + PySide2 5.15.2.1 (Maya 2024-like):  198 passed
-Python 3.13    + PySide6 6.8.1   (Maya 2025-like):   198 passed
+Python 3.10.20 + PySide2 5.15.2.1 (Maya 2024-like):  201 passed
+Python 3.13    + PySide6 6.8.1   (Maya 2025-like):   201 passed
 ```
 
-New in Phase 03 (17 tests): `tests/unit/test_maya_guides.py`, guide tests in
+New in Phase 03 (20 tests): `tests/unit/test_maya_guides.py`, guide tests in
 `tests/unit/test_segmentation.py` and `tests/integration/test_roto_jobs_http.py`,
-`tests/mock_maya/test_roto_guides_mock.py`. The mock-Maya tests use a **fake** `maya` package.
+`tests/mock_maya/test_roto_guides_mock.py`, HTTPS trust tests in `tests/unit/test_model_manager.py`. The mock-Maya tests use a **fake** `maya` package.
 
 ## 5. Known limitations
 
